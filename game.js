@@ -16,6 +16,10 @@ const elements = {
   rulesButton: document.querySelector("#rulesButton"),
   rulesDialog: document.querySelector("#rulesDialog"),
   resultDialog: document.querySelector("#resultDialog"),
+  exitDialog: document.querySelector("#exitDialog"),
+  exitDialogTitle: document.querySelector("#exitDialogTitle"),
+  exitDialogMessage: document.querySelector("#exitDialogMessage"),
+  confirmExitButton: document.querySelector("#confirmExitButton"),
   confirmDialog: document.querySelector("#confirmDialog"),
   confirmResignButton: document.querySelector("#confirmResignButton"),
   modeBadge: document.querySelector("#modeBadge"),
@@ -795,6 +799,39 @@ async function leaveRoom() {
   showScreen("lobby");
 }
 
+function requestHome() {
+  const game = currentGame();
+
+  if (state.transport === "idle") {
+    showScreen("lobby");
+    return;
+  }
+
+  if (game?.status === "playing") {
+    if (state.transport === "online") {
+      elements.exitDialogTitle.textContent = "确认返回大厅？";
+      elements.exitDialogMessage.textContent = "返回大厅将视为认输，本局立即结束，对方获胜。";
+      elements.confirmExitButton.textContent = "认输并返回";
+    } else {
+      elements.exitDialogTitle.textContent = "确认结束棋局？";
+      elements.exitDialogMessage.textContent = "返回大厅会结束当前离线棋局，当前进度不会保存。";
+      elements.confirmExitButton.textContent = "结束并返回";
+    }
+    elements.exitDialog.showModal();
+    return;
+  }
+
+  if (state.room?.status === "waiting") {
+    elements.exitDialogTitle.textContent = "确认退出房间？";
+    elements.exitDialogMessage.textContent = "退出后需要重新创建或加入房间。";
+    elements.confirmExitButton.textContent = "退出房间";
+    elements.exitDialog.showModal();
+    return;
+  }
+
+  leaveRoom();
+}
+
 async function resignGame() {
   if (state.transport === "offline") {
     const game = state.localGame;
@@ -880,7 +917,7 @@ function bindEvents() {
   elements.offlineButton.addEventListener("click", () => startOffline());
   elements.startButton.addEventListener("click", startRoom);
   elements.leaveWaitingButton.addEventListener("click", leaveRoom);
-  elements.homeButton.addEventListener("click", leaveRoom);
+  elements.homeButton.addEventListener("click", requestHome);
   elements.roomChip.addEventListener("click", copyRoomCode);
   elements.copyRoomCodeButton.addEventListener("click", copyRoomCode);
   elements.rulesButton.addEventListener("click", () => elements.rulesDialog.showModal());
@@ -888,11 +925,12 @@ function bindEvents() {
   elements.clearPreviewButton.addEventListener("click", clearPreview);
   elements.resignButton.addEventListener("click", () => elements.confirmDialog.showModal());
   elements.confirmResignButton.addEventListener("click", resignGame);
+  elements.confirmExitButton.addEventListener("click", leaveRoom);
   elements.rematchButton.addEventListener("click", rematch);
   elements.resultLobbyButton.addEventListener("click", leaveRoom);
   window.addEventListener("keydown", (event) => {
     if (event.key === "?" && !elements.rulesDialog.open) elements.rulesDialog.showModal();
-    if (event.key === "Escape" && state.preview && !elements.rulesDialog.open && !elements.confirmDialog.open) clearPreview();
+    if (event.key === "Escape" && state.preview && !elements.rulesDialog.open && !elements.confirmDialog.open && !elements.exitDialog.open) clearPreview();
     if (event.key === "Enter" && state.previewAnalysis?.legal && !elements.resultDialog.open) confirmMove();
   });
 }

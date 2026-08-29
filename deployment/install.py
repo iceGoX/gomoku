@@ -11,7 +11,7 @@ from pathlib import Path
 NGINX_SNIPPET = Path("/etc/nginx/snippets/gomoku.conf")
 SERVICE_FILE = Path("/etc/systemd/system/gomoku.service")
 APP_ROOT = Path("/opt/gomoku")
-WEB_ROOT = Path("/var/www/html/gomoku")
+WEB_ROOT = Path("/var/www/html/wuziqi")
 INCLUDE_LINE = "    include /etc/nginx/snippets/gomoku.conf;\n"
 DOMAIN_PATTERN = re.compile(r"^(?=.{1,253}$)(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,63}$")
 
@@ -64,7 +64,7 @@ def install(source: Path, domain: str) -> None:
     subprocess.run(["systemctl", "enable", "--now", "gomoku.service"], check=True)
     subprocess.run(["systemctl", "restart", "gomoku.service"], check=True)
     subprocess.run(["systemctl", "reload", "nginx"], check=True)
-    print(f"Gomoku installed at https://{domain}/gomoku/")
+    print(f"Gomoku installed at https://{domain}/wuziqi/")
 
 
 def main() -> None:

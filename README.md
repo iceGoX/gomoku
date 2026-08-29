@@ -38,6 +38,16 @@ python3 -m unittest discover -s tests -v
 
 项目未引入打包器；静态文件可直接由 Python 服务或任意静态服务器提供。
 
+## 服务器部署
+
+项目附带 Nginx 与 systemd 部署配置，默认发布在 `/wuziqi/` 子路径：
+
+```bash
+sudo python3 deployment/install.py --source . --domain example.com
+```
+
+安装后静态页面由 Nginx 托管，`/wuziqi/api/` 转发到本机 Python 房间服务。
+
 ## 专业规则边界
 
 专业模式实现国际连珠规则中的核心棋盘、胜负和黑方禁手逻辑。三三判断不是简单图形匹配：只有能够通过合法着法形成“活四”的三才计入，并递归排除会在延伸点产生禁手的假活三。
