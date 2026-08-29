@@ -1,0 +1,166 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
+    <meta name="theme-color" content="#efe5d2" />
+    <meta name="description" content="支持在线房间、离线双人、普通模式与连珠专业规则的网页五子棋" />
+    <title>弈五 · 在线五子棋</title>
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='16' fill='%23d8a95f'/%3E%3Cpath d='M8 20h48M8 32h48M8 44h48M20 8v48M32 8v48M44 8v48' stroke='%23745a36' stroke-width='2'/%3E%3Ccircle cx='32' cy='32' r='11' fill='%231b1b1a'/%3E%3C/svg%3E" />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <button class="brand" id="homeButton" type="button" aria-label="返回大厅">
+        <span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i><i></i><b></b></span>
+        <span><strong>弈五</strong><small>GOMOKU ONLINE</small></span>
+      </button>
+      <div class="header-status">
+        <button class="room-chip hidden" id="roomChip" type="button" title="复制房间号">
+          <span class="connection-dot" id="connectionDot"></span>
+          <span>房间</span><b id="headerRoomCode">------</b>
+        </button>
+        <button class="quiet-button" id="rulesButton" type="button">规则说明 <kbd>?</kbd></button>
+      </div>
+    </header>
+
+    <main>
+      <section class="lobby" id="lobbyScreen">
+        <div class="lobby-copy">
+          <p class="eyebrow">FIVE IN A ROW</p>
+          <h1>一张棋盘，<br /><em>两种胜负逻辑。</em></h1>
+          <p>普通模式轻松下，专业模式按连珠核心规则裁决。在线邀请朋友，或直接在同一台设备离线对弈。</p>
+          <div class="feature-row" aria-label="产品特点">
+            <span><b>15×15</b> 标准棋盘</span>
+            <span><b>双击</b> 确认落子</span>
+            <span><b>实时</b> 房间同步</span>
+          </div>
+        </div>
+
+        <div class="lobby-card">
+          <div class="mode-heading">
+            <div><p class="eyebrow">RULE SET</p><h2>选择规则</h2></div>
+            <span class="mode-badge" id="modeBadge">普通</span>
+          </div>
+          <div class="mode-picker" role="radiogroup" aria-label="规则模式">
+            <label>
+              <input type="radio" name="gameMode" value="normal" checked />
+              <span><strong>普通模式</strong><small>无禁手，五子或更多即胜</small></span>
+            </label>
+            <label>
+              <input type="radio" name="gameMode" value="professional" />
+              <span><strong>专业模式</strong><small>黑方禁三三、四四与长连</small></span>
+            </label>
+          </div>
+
+          <div class="online-tabs" role="tablist" aria-label="在线进入方式">
+            <button class="online-tab active" data-tab="create" role="tab" aria-selected="true" type="button">创建房间</button>
+            <button class="online-tab" data-tab="join" role="tab" aria-selected="false" type="button">加入房间</button>
+          </div>
+          <form class="online-form" id="createForm">
+            <label><span>你的昵称</span><input id="createName" maxlength="16" autocomplete="nickname" placeholder="例如：天元棋手" required /></label>
+            <button class="primary-button" type="submit">创建双人房间</button>
+          </form>
+          <form class="online-form hidden" id="joinForm">
+            <label><span>你的昵称</span><input id="joinName" maxlength="16" autocomplete="nickname" placeholder="例如：白棋手" required /></label>
+            <label><span>六位房间号</span><input class="code-input" id="joinCode" maxlength="6" autocomplete="off" autocapitalize="characters" placeholder="A7K92M" required /></label>
+            <button class="primary-button" type="submit">加入房间</button>
+          </form>
+          <p class="form-message" id="lobbyMessage" aria-live="polite"></p>
+          <button class="offline-entry" id="offlineButton" type="button">
+            <span class="offline-icon" aria-hidden="true">◉</span>
+            <span><strong>离线双人对弈</strong><small>不创建房间，一台设备轮流操作黑白双方</small></span>
+            <span aria-hidden="true">→</span>
+          </button>
+        </div>
+      </section>
+
+      <section class="waiting hidden" id="waitingScreen">
+        <div class="waiting-card">
+          <p class="eyebrow">PRIVATE ROOM</p>
+          <h1>等待白方入席</h1>
+          <p>把六位房间号发给朋友。两名棋手都到齐后，由房主开始。</p>
+          <button class="large-code" id="copyRoomCodeButton" type="button"><span>房间号</span><b id="waitingRoomCode">------</b><small>点击复制</small></button>
+          <div class="seat-list" id="seatList"></div>
+          <div class="waiting-actions">
+            <button class="primary-button" id="startButton" type="button">等待玩家加入</button>
+            <button class="quiet-button" id="leaveWaitingButton" type="button">退出房间</button>
+          </div>
+          <p class="form-message" id="waitingMessage" aria-live="polite"></p>
+        </div>
+      </section>
+
+      <section class="game-shell hidden" id="gameScreen">
+        <section class="board-column" aria-labelledby="turnTitle">
+          <div class="turn-card">
+            <div class="turn-player">
+              <span class="turn-stone black" id="turnStone" aria-hidden="true"></span>
+              <div><p class="eyebrow" id="turnEyebrow">CURRENT TURN</p><h1 id="turnTitle">黑方，请选择落点</h1></div>
+            </div>
+            <div class="turn-number"><strong id="turnNumber">01</strong><span>TURN</span></div>
+          </div>
+          <div class="player-strip" id="playerStrip" aria-label="玩家状态"></div>
+          <div class="board-wrap">
+            <div class="coordinate top"><span>A</span><span>B</span><span>C</span><span>D</span><span>E</span><span>F</span><span>G</span><span>H</span><span>J</span><span>K</span><span>L</span><span>M</span><span>N</span><span>O</span><span>P</span></div>
+            <div class="coordinate left"><span>15</span><span>14</span><span>13</span><span>12</span><span>11</span><span>10</span><span>9</span><span>8</span><span>7</span><span>6</span><span>5</span><span>4</span><span>3</span><span>2</span><span>1</span></div>
+            <div class="board" id="board" role="grid" aria-label="15 乘 15 五子棋棋盘"></div>
+          </div>
+          <div class="status-line" id="statusLine" aria-live="polite"><span aria-hidden="true">◎</span><p id="statusText">第一次点击预览，第二次点击确认落子。</p></div>
+        </section>
+
+        <aside class="game-panel">
+          <div class="panel-heading"><div><p class="eyebrow">MATCH INFO</p><h2 id="panelModeTitle">普通模式</h2></div><span class="online-state" id="onlineState">离线</span></div>
+          <div class="rule-summary" id="ruleSummary"></div>
+          <div class="preview-card" id="previewCard">
+            <div class="preview-stone black" id="previewStone" aria-hidden="true"></div>
+            <div><span>待确认落点</span><strong id="previewCoordinate">尚未选择</strong><small id="previewHint">点击棋盘上的空交叉点</small></div>
+          </div>
+          <button class="primary-button confirm-button" id="confirmButton" type="button" disabled>确认落子</button>
+          <div class="match-actions">
+            <button class="quiet-button" id="clearPreviewButton" type="button" disabled>取消预览</button>
+            <button class="quiet-button danger" id="resignButton" type="button">认输</button>
+          </div>
+          <div class="move-log">
+            <div class="move-log-heading"><h3>最近落子</h3><span id="moveCount">0 手</span></div>
+            <ol id="moveList"><li class="empty-log">棋局开始后会记录坐标</li></ol>
+          </div>
+        </aside>
+      </section>
+    </main>
+
+    <dialog class="rules-dialog" id="rulesDialog">
+      <form method="dialog">
+        <div class="dialog-heading"><div><p class="eyebrow">HOW TO PLAY</p><h2>规则与落子方式</h2></div><button class="icon-button" value="close" aria-label="关闭">×</button></div>
+        <div class="rule-grid">
+          <section><b>01</b><h3>双击确认</h3><p>第一次点击显示半透明虚子；再次点击同一交叉点才真正落子。点击其他位置会移动虚子。</p></section>
+          <section><b>02</b><h3>普通模式</h3><p>黑白交替落子，不设禁手。任一方在横、竖或斜线连成五子或更多即胜。</p></section>
+          <section><b>03</b><h3>专业模式</h3><p>15×15 棋盘，黑方首手天元。黑方禁止长连、四四与三三，恰好五连获胜；白方五连或长连获胜。</p></section>
+          <section><b>04</b><h3>在线裁决</h3><p>在线房间由服务端验证回合、落点、胜负和禁手；浏览器只负责预览，不拥有最终裁决权。</p></section>
+        </div>
+        <p class="dialog-note">专业模式实现连珠核心棋规。国际正式比赛还会按赛事另选 Soosyrv、Taraguchi 等开局规程，本模式暂不模拟编珠与换手阶段。</p>
+      </form>
+    </dialog>
+
+    <dialog class="result-dialog" id="resultDialog">
+      <div class="result-card">
+        <p class="eyebrow">MATCH RESULT</p>
+        <div class="result-symbol" id="resultSymbol" aria-hidden="true">●</div>
+        <h2 id="resultTitle">黑方获胜</h2>
+        <p id="resultMessage">连成五子，本局结束。</p>
+        <div class="result-actions">
+          <button class="primary-button" id="rematchButton" type="button">再来一局</button>
+          <button class="quiet-button" id="resultLobbyButton" type="button">回到大厅</button>
+        </div>
+      </div>
+    </dialog>
+
+    <dialog class="confirm-dialog" id="confirmDialog">
+      <form method="dialog">
+        <h2>确认认输？</h2>
+        <p>认输后本局立即结束，对方获胜。</p>
+        <div><button class="quiet-button" value="cancel">继续对局</button><button class="primary-button danger-fill" id="confirmResignButton" value="confirm">确认认输</button></div>
+      </form>
+    </dialog>
+    <script type="module" src="game.js"></script>
+  </body>
+</html>

@@ -1,0 +1,1 @@
+"""Gomoku test suite."""
