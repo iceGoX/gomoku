@@ -234,6 +234,26 @@ def resign(game: dict[str, Any], color: int) -> tuple[bool, str]:
     return True, f"{PLAYER_LABELS[color]}已认输。"
 
 
+def undo_last_move(game: dict[str, Any]) -> tuple[bool, str]:
+    if game["status"] != "playing":
+        return False, "只能在进行中的对局里悔棋。"
+    if not game["moveHistory"]:
+        return False, "当前没有可撤销的落子。"
+
+    move = game["moveHistory"].pop()
+    game["board"][board_index(move["row"], move["col"])] = EMPTY
+    game["currentColor"] = move["color"]
+    game["turn"] = len(game["moveHistory"]) + 1
+    game["lastMove"] = (
+        [game["moveHistory"][-1]["row"], game["moveHistory"][-1]["col"]]
+        if game["moveHistory"]
+        else None
+    )
+    game["winnerColor"] = None
+    game["resultReason"] = None
+    return True, "已撤销最后一颗棋子。"
+
+
 def public_game(game: dict[str, Any]) -> dict[str, Any]:
     return {
         "mode": game["mode"],

@@ -116,7 +116,7 @@ body[data-screen="game"] main { padding-top: 10px; }
 .seat-stone.white, .turn-stone.white { background: radial-gradient(circle at 35% 30%, #fff, #e5e0d4 70%); box-shadow: inset 0 0 0 1px rgba(32, 31, 28, 0.16), 0 3px 8px rgba(32, 31, 28, 0.14); }
 .seat > span:last-child { display: grid; }
 .seat small { color: var(--muted); }
-.waiting-actions { display: grid; grid-template-columns: 1.4fr 0.8fr; gap: 10px; margin-top: 20px; }
+.waiting-actions { display: grid; grid-template-columns: 1.4fr 1fr 0.8fr; gap: 10px; margin-top: 20px; }
 
 .game-shell { display: grid; grid-template-columns: minmax(560px, 1fr) minmax(300px, 380px); align-items: start; gap: clamp(20px, 3vw, 42px); }
 .board-column { width: min(100%, 920px); margin: 0 auto; }
@@ -214,6 +214,7 @@ dialog::backdrop { background: rgba(24, 25, 23, 0.5); backdrop-filter: blur(6px)
 .result-card h2 { margin: 0; font-family: Georgia, "Songti SC", serif; font-size: 2.1rem; font-weight: 500; }
 .result-card > p:not(.eyebrow) { color: var(--muted); line-height: 1.6; }
 .result-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 24px; }
+.result-actions #resultLobbyButton { grid-column: 1 / -1; }
 .confirm-dialog { width: min(420px, calc(100% - 24px)); }
 .confirm-dialog form { padding: 28px; }
 .confirm-dialog h2 { margin: 0; font-family: Georgia, "Songti SC", serif; font-weight: 500; }

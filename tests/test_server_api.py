@@ -100,6 +100,86 @@ class ServerApiTests(unittest.TestCase):
         self.assertEqual(status, 409)
         self.assertEqual(result["error"], "STALE_STATE")
 
+    def test_players_can_confirm_seat_swap_before_start(self):
+        created = self.create_room()
+        code = created["room"]["code"]
+        _, joined = self.request(f"/api/rooms/{code}/join", {"name": "白方"})
+
+        status, requested = self.request(f"/api/rooms/{code}/swap", {}, created)
+        self.assertEqual(status, 200)
+        self.assertEqual(requested["room"]["seatSwapRequestPlayerId"], created["playerId"])
+
+        status, swapped = self.request(f"/api/rooms/{code}/swap", {}, joined)
+        self.assertEqual(status, 200)
+        colors = {player["id"]: player["color"] for player in swapped["room"]["players"]}
+        self.assertEqual(colors[created["playerId"]], 2)
+        self.assertEqual(colors[joined["playerId"]], 1)
+
+        status, started = self.request(f"/api/rooms/{code}/start", {}, created)
+        self.assertEqual(status, 200)
+        self.assertEqual(started["room"]["game"]["currentColor"], 1)
+
+    def test_players_can_confirm_seat_swap_after_game_finished(self):
+        created = self.create_room()
+        code = created["room"]["code"]
+        _, joined = self.request(f"/api/rooms/{code}/join", {"name": "白方"})
+        self.request(f"/api/rooms/{code}/start", {}, created)
+        self.request(f"/api/rooms/{code}/resign", {}, created)
+
+        self.assertEqual(self.request(f"/api/rooms/{code}/swap", {}, joined)[0], 200)
+        status, swapped = self.request(f"/api/rooms/{code}/swap", {}, created)
+        self.assertEqual(status, 200)
+        self.assertEqual(swapped["room"]["status"], "playing")
+        colors = {player["id"]: player["color"] for player in swapped["room"]["players"]}
+        self.assertEqual(colors[created["playerId"]], 2)
+        self.assertEqual(colors[joined["playerId"]], 1)
+        self.assertEqual(swapped["room"]["game"]["currentColor"], 1)
+
+    def test_only_opponent_can_undo_last_move_without_limit(self):
+        created = self.create_room()
+        code = created["room"]["code"]
+        _, joined = self.request(f"/api/rooms/{code}/join", {"name": "白方"})
+        _, started = self.request(f"/api/rooms/{code}/start", {}, created)
+        room = started["room"]
+
+        _, moved = self.request(
+            f"/api/rooms/{code}/place",
+            {"row": 7, "col": 7, "expectedVersion": room["version"]},
+            created,
+        )
+        _, moved = self.request(
+            f"/api/rooms/{code}/place",
+            {"row": 7, "col": 8, "expectedVersion": moved["room"]["version"]},
+            joined,
+        )
+        _, moved = self.request(
+            f"/api/rooms/{code}/place",
+            {"row": 8, "col": 7, "expectedVersion": moved["room"]["version"]},
+            created,
+        )
+
+        status, result = self.request(f"/api/rooms/{code}/undo", {}, created)
+        self.assertEqual(status, 403)
+        self.assertEqual(result["error"], "UNDO_NOT_OPPONENT")
+
+        status, undone = self.request(f"/api/rooms/{code}/undo", {}, joined)
+        self.assertEqual(status, 200)
+        game = undone["room"]["game"]
+        self.assertEqual(len(game["moveHistory"]), 2)
+        self.assertEqual(game["board"][7 * 15 + 7], 1)
+        self.assertEqual(game["currentColor"], 1)
+        self.assertEqual(game["turn"], 3)
+
+        _, moved_again = self.request(
+            f"/api/rooms/{code}/place",
+            {"row": 8, "col": 7, "expectedVersion": undone["room"]["version"]},
+            created,
+        )
+        status, undone_again = self.request(f"/api/rooms/{code}/undo", {}, joined)
+        self.assertEqual(status, 200)
+        self.assertEqual(len(undone_again["room"]["game"]["moveHistory"]), 2)
+        self.assertEqual(moved_again["room"]["game"]["moveHistory"][-1]["color"], 1)
+
 
 if __name__ == "__main__":
     unittest.main()

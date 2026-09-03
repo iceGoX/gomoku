@@ -15,9 +15,9 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 try:
-    from .game_engine import BLACK, WHITE, create_game, place_stone, public_game, resign
+    from .game_engine import BLACK, WHITE, create_game, place_stone, public_game, resign, undo_last_move
 except ImportError:
-    from game_engine import BLACK, WHITE, create_game, place_stone, public_game, resign
+    from game_engine import BLACK, WHITE, create_game, place_stone, public_game, resign, undo_last_move
 
 ROOT = Path(__file__).resolve().parents[1]
 ROOM_CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
@@ -71,6 +71,7 @@ def public_room(room: dict) -> dict:
         "updatedAt": room["updatedAt"],
         "lastEvent": room.get("lastEvent"),
         "rematchVotes": list(room.get("rematchVotes", [])),
+        "seatSwapRequestPlayerId": room.get("seatSwapRequestPlayerId"),
         "players": [
             {
                 "id": player["id"],
@@ -257,7 +258,7 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/api/rooms":
                 self.create_room(data)
                 return
-            route = re.fullmatch(r"/api/rooms/([A-Z2-9]{6})/(join|start|place|resign|rematch|leave)", path)
+            route = re.fullmatch(r"/api/rooms/([A-Z2-9]{6})/(join|start|place|resign|rematch|swap|undo|leave)", path)
             if route:
                 action = route.group(2)
                 getattr(self, f"room_{action}")(route.group(1), data)
@@ -292,6 +293,7 @@ class Handler(BaseHTTPRequestHandler):
                 "eventSequence": 0,
                 "lastEvent": None,
                 "rematchVotes": set(),
+                "seatSwapRequestPlayerId": None,
             }
             set_event(room, "ROOM_CREATED", f"{name} 创建了房间。", player["id"])
             rooms[code] = room
@@ -331,6 +333,7 @@ class Handler(BaseHTTPRequestHandler):
                 return
             room["game"] = create_game(room["mode"])
             room["status"] = "playing"
+            room["seatSwapRequestPlayerId"] = None
             room["version"] += 1
             room["updatedAt"] = now()
             set_event(room, "GAME_STARTED", "对局开始，黑方先行。", player["id"])
@@ -398,6 +401,7 @@ class Handler(BaseHTTPRequestHandler):
                 room["game"] = create_game(room["mode"])
                 room["status"] = "playing"
                 room["rematchVotes"].clear()
+                room["seatSwapRequestPlayerId"] = None
                 message = "双方已确认，再来一局。"
                 event_type = "REMATCH_STARTED"
             else:
@@ -406,6 +410,75 @@ class Handler(BaseHTTPRequestHandler):
             room["version"] += 1
             room["updatedAt"] = now()
             set_event(room, event_type, message, player["id"])
+            response = public_room(room)
+        self.send_json(HTTPStatus.OK, {"room": response})
+        publish(code)
+
+    def room_swap(self, code: str, data: dict) -> None:
+        with rooms_lock:
+            room, player = self.authenticated_room(code)
+            if not room or not player:
+                return
+            if room["status"] not in {"waiting", "finished"}:
+                self.send_json(HTTPStatus.CONFLICT, {"error": "SEAT_SWAP_UNAVAILABLE", "message": "只能在开局前或本局结束后交换先后手。"})
+                return
+            if len(room["players"]) != 2:
+                self.send_json(HTTPStatus.CONFLICT, {"error": "NOT_READY", "message": "两名玩家都入席后才能交换先后手。"})
+                return
+
+            requester_id = room.get("seatSwapRequestPlayerId")
+            if requester_id == player["id"]:
+                room["seatSwapRequestPlayerId"] = None
+                event_type = "SEAT_SWAP_CANCELLED"
+                message = f"{player['name']} 取消了交换先后手请求。"
+            elif requester_id:
+                for participant in room["players"]:
+                    participant["color"] = WHITE if participant["color"] == BLACK else BLACK
+                room["seatSwapRequestPlayerId"] = None
+                room["rematchVotes"].clear()
+                if room["status"] == "finished":
+                    room["game"] = create_game(room["mode"])
+                    room["status"] = "playing"
+                    event_type = "SEATS_SWAPPED_AND_REMATCH_STARTED"
+                    message = "双方已交换先后手，下一局已开始，黑方先行。"
+                else:
+                    event_type = "SEATS_SWAPPED"
+                    message = "双方已交换先后手。"
+            else:
+                room["seatSwapRequestPlayerId"] = player["id"]
+                event_type = "SEAT_SWAP_REQUESTED"
+                message = f"{player['name']} 请求交换先后手。"
+
+            room["version"] += 1
+            room["updatedAt"] = now()
+            set_event(room, event_type, message, player["id"])
+            response = public_room(room)
+        self.send_json(HTTPStatus.OK, {"room": response})
+        publish(code)
+
+    def room_undo(self, code: str, data: dict) -> None:
+        with rooms_lock:
+            room, player = self.authenticated_room(code)
+            if not room or not player:
+                return
+            game = room.get("game")
+            if room["status"] != "playing" or not game:
+                self.send_json(HTTPStatus.CONFLICT, {"error": "GAME_NOT_PLAYING", "message": "只能在进行中的对局里悔棋。"})
+                return
+            if not game["moveHistory"]:
+                self.send_json(HTTPStatus.CONFLICT, {"error": "UNDO_UNAVAILABLE", "message": "当前没有可撤销的落子。"})
+                return
+            if player["color"] == game["moveHistory"][-1]["color"]:
+                self.send_json(HTTPStatus.FORBIDDEN, {"error": "UNDO_NOT_OPPONENT", "message": "只能由未落下最后一子的对方悔棋。"})
+                return
+            success, message = undo_last_move(game)
+            if not success:
+                self.send_json(HTTPStatus.CONFLICT, {"error": "UNDO_UNAVAILABLE", "message": message})
+                return
+
+            room["version"] += 1
+            room["updatedAt"] = now()
+            set_event(room, "UNDO_APPLIED", message, player["id"])
             response = public_room(room)
         self.send_json(HTTPStatus.OK, {"room": response})
         publish(code)

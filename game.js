@@ -37,6 +37,7 @@ const elements = {
   copyRoomCodeButton: document.querySelector("#copyRoomCodeButton"),
   seatList: document.querySelector("#seatList"),
   startButton: document.querySelector("#startButton"),
+  waitingSwapSeatsButton: document.querySelector("#waitingSwapSeatsButton"),
   leaveWaitingButton: document.querySelector("#leaveWaitingButton"),
   waitingMessage: document.querySelector("#waitingMessage"),
   board: document.querySelector("#board"),
@@ -55,7 +56,7 @@ const elements = {
   previewCoordinate: document.querySelector("#previewCoordinate"),
   previewHint: document.querySelector("#previewHint"),
   confirmButton: document.querySelector("#confirmButton"),
-  clearPreviewButton: document.querySelector("#clearPreviewButton"),
+  undoButton: document.querySelector("#undoButton"),
   resignButton: document.querySelector("#resignButton"),
   moveCount: document.querySelector("#moveCount"),
   moveList: document.querySelector("#moveList"),
@@ -63,6 +64,7 @@ const elements = {
   resultTitle: document.querySelector("#resultTitle"),
   resultMessage: document.querySelector("#resultMessage"),
   rematchButton: document.querySelector("#rematchButton"),
+  resultSwapSeatsButton: document.querySelector("#resultSwapSeatsButton"),
   resultLobbyButton: document.querySelector("#resultLobbyButton"),
 };
 
@@ -484,14 +486,42 @@ function renderPreview() {
     elements.previewHint.textContent = canAct() ? "点击棋盘上的空交叉点" : "等待对方完成落子";
     elements.previewCard.classList.remove("illegal");
     elements.confirmButton.disabled = true;
-    elements.clearPreviewButton.disabled = true;
     return;
   }
   elements.previewCoordinate.textContent = coordinateLabel(state.preview.row, state.preview.col);
   elements.previewHint.textContent = state.previewAnalysis?.message || "再次点击确认落子。";
   elements.previewCard.classList.toggle("illegal", !state.previewAnalysis?.legal);
   elements.confirmButton.disabled = !state.previewAnalysis?.legal;
-  elements.clearPreviewButton.disabled = false;
+}
+
+function renderUndoAction() {
+  const game = currentGame();
+  if (!game) return;
+  const lastMove = game.moveHistory?.at(-1);
+  if (state.transport === "offline") {
+    elements.undoButton.textContent = "悔棋";
+    elements.undoButton.disabled = game.status !== "playing" || !lastMove;
+    return;
+  }
+  const me = currentPlayer();
+  const available = game.status === "playing" && lastMove && me?.color !== lastMove.color;
+  elements.undoButton.textContent = available ? "悔棋" : "等待对方落子";
+  elements.undoButton.disabled = !available;
+}
+
+function renderSeatSwapActions() {
+  const buttons = [elements.waitingSwapSeatsButton, elements.resultSwapSeatsButton];
+  const available = state.transport === "online"
+    && ["waiting", "finished"].includes(state.room?.status)
+    && state.room.players.length === 2
+    && currentPlayer();
+  const requesterId = state.room?.seatSwapRequestPlayerId;
+  const ownRequest = requesterId && requesterId === state.session?.playerId;
+  const label = requesterId ? (ownRequest ? "取消交换请求" : "同意交换先后手") : "交换先后手";
+  buttons.forEach((button) => {
+    button.textContent = label;
+    button.disabled = !available;
+  });
 }
 
 function renderMoveLog() {
@@ -528,8 +558,10 @@ function renderGame() {
   renderRules();
   renderBoard();
   renderPreview();
+  renderUndoAction();
   renderMoveLog();
   renderStatus();
+  renderSeatSwapActions();
   maybeShowResult();
 }
 
@@ -549,6 +581,7 @@ function renderWaiting() {
   elements.startButton.disabled = !me?.isHost || !ready;
   elements.startButton.textContent = !me?.isHost ? "等待房主开始" : ready ? "开始对局" : "等待玩家加入";
   elements.waitingMessage.textContent = state.room.lastEvent?.message || "";
+  renderSeatSwapActions();
 }
 
 function renderRoom() {
@@ -619,9 +652,63 @@ function clearPreview() {
   renderGame();
 }
 
+function undoLocalMove() {
+  const game = state.localGame;
+  const move = game?.moveHistory.at(-1);
+  if (!move) return;
+  game.board[indexOf(move.row, move.col)] = EMPTY;
+  game.moveHistory.pop();
+  game.currentColor = move.color;
+  game.turn = game.moveHistory.length + 1;
+  const lastMove = game.moveHistory.at(-1);
+  game.lastMove = lastMove ? [lastMove.row, lastMove.col] : null;
+  game.winnerColor = null;
+  game.resultReason = null;
+  state.preview = null;
+  state.previewAnalysis = null;
+  clearStatusOverride();
+  renderGame();
+}
+
+async function requestUndo() {
+  const game = currentGame();
+  if (!game) return;
+  if (state.transport === "offline") {
+    undoLocalMove();
+    return;
+  }
+  elements.undoButton.disabled = true;
+  try {
+    const result = await apiRequest(`rooms/${state.room.code}/undo`, { body: "{}" });
+    state.room = result.room;
+    state.preview = null;
+    state.previewAnalysis = null;
+    clearStatusOverride();
+    renderRoom();
+  } catch (error) {
+    setStatus(error.message, true);
+    renderRoom();
+  }
+}
+
+async function swapSeats() {
+  if (!state.room) return;
+  const waiting = state.room.status === "waiting";
+  try {
+    const result = await apiRequest(`rooms/${state.room.code}/swap`, { body: "{}" });
+    state.room = result.room;
+    clearStatusOverride();
+    renderRoom();
+  } catch (error) {
+    if (waiting) elements.waitingMessage.textContent = error.message;
+    else setStatus(error.message, true);
+  }
+}
+
 function maybeShowResult() {
   const game = currentGame();
   if (!game || game.status !== "finished") return;
+  renderSeatSwapActions();
   const key = `${state.transport}:${state.room?.version || game.moveHistory.length}:${game.resultReason}:${game.winnerColor}`;
   if (state.resultKey === key) return;
   state.resultKey = key;
@@ -916,17 +1003,19 @@ function bindEvents() {
   elements.joinCode.addEventListener("input", () => { elements.joinCode.value = elements.joinCode.value.toUpperCase().replace(/[^A-Z2-9]/g, ""); });
   elements.offlineButton.addEventListener("click", () => startOffline());
   elements.startButton.addEventListener("click", startRoom);
+  elements.waitingSwapSeatsButton.addEventListener("click", swapSeats);
   elements.leaveWaitingButton.addEventListener("click", leaveRoom);
   elements.homeButton.addEventListener("click", requestHome);
   elements.roomChip.addEventListener("click", copyRoomCode);
   elements.copyRoomCodeButton.addEventListener("click", copyRoomCode);
   elements.rulesButton.addEventListener("click", () => elements.rulesDialog.showModal());
   elements.confirmButton.addEventListener("click", confirmMove);
-  elements.clearPreviewButton.addEventListener("click", clearPreview);
+  elements.undoButton.addEventListener("click", requestUndo);
   elements.resignButton.addEventListener("click", () => elements.confirmDialog.showModal());
   elements.confirmResignButton.addEventListener("click", resignGame);
   elements.confirmExitButton.addEventListener("click", leaveRoom);
   elements.rematchButton.addEventListener("click", rematch);
+  elements.resultSwapSeatsButton.addEventListener("click", swapSeats);
   elements.resultLobbyButton.addEventListener("click", leaveRoom);
   window.addEventListener("keydown", (event) => {
     if (event.key === "?" && !elements.rulesDialog.open) elements.rulesDialog.showModal();

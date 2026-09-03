@@ -84,6 +84,7 @@
           <div class="seat-list" id="seatList"></div>
           <div class="waiting-actions">
             <button class="primary-button" id="startButton" type="button">等待玩家加入</button>
+            <button class="quiet-button" id="waitingSwapSeatsButton" type="button">交换先后手</button>
             <button class="quiet-button" id="leaveWaitingButton" type="button">退出房间</button>
           </div>
           <p class="form-message" id="waitingMessage" aria-live="polite"></p>
@@ -117,7 +118,7 @@
           </div>
           <button class="primary-button confirm-button" id="confirmButton" type="button" disabled>确认落子</button>
           <div class="match-actions">
-            <button class="quiet-button" id="clearPreviewButton" type="button" disabled>取消预览</button>
+            <button class="quiet-button" id="undoButton" type="button" disabled>悔棋</button>
             <button class="quiet-button danger" id="resignButton" type="button">认输</button>
           </div>
           <div class="move-log">
@@ -149,6 +150,7 @@
         <p id="resultMessage">连成五子，本局结束。</p>
         <div class="result-actions">
           <button class="primary-button" id="rematchButton" type="button">再来一局</button>
+          <button class="quiet-button" id="resultSwapSeatsButton" type="button">交换先后手</button>
           <button class="quiet-button" id="resultLobbyButton" type="button">回到大厅</button>
         </div>
       </div>
