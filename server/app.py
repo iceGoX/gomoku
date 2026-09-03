@@ -72,6 +72,13 @@ def public_room(room: dict) -> dict:
         "lastEvent": room.get("lastEvent"),
         "rematchVotes": list(room.get("rematchVotes", [])),
         "seatSwapRequestPlayerId": room.get("seatSwapRequestPlayerId"),
+        "undo": {
+            "requestPlayerId": room.get("undoRequestPlayerId"),
+            "uses": {
+                player["id"]: room.get("undoUses", {}).get(player["id"], 0)
+                for player in room["players"]
+            },
+        },
         "players": [
             {
                 "id": player["id"],
@@ -106,6 +113,10 @@ def authenticate(room: dict, player_id: str | None, token: str | None) -> dict |
     if not player or not token:
         return None
     return player if secrets.compare_digest(player["token"], token) else None
+
+
+def reset_undo_uses(room: dict) -> None:
+    room["undoUses"] = {player["id"]: 0 for player in room["players"]}
 
 
 def publish(room_code: str) -> None:
@@ -294,6 +305,8 @@ class Handler(BaseHTTPRequestHandler):
                 "lastEvent": None,
                 "rematchVotes": set(),
                 "seatSwapRequestPlayerId": None,
+                "undoRequestPlayerId": None,
+                "undoUses": {player["id"]: 0},
             }
             set_event(room, "ROOM_CREATED", f"{name} 创建了房间。", player["id"])
             rooms[code] = room
@@ -313,6 +326,7 @@ class Handler(BaseHTTPRequestHandler):
                 return
             player = make_player(name, WHITE, False)
             room["players"].append(player)
+            room["undoUses"][player["id"]] = 0
             room["version"] += 1
             room["updatedAt"] = now()
             set_event(room, "PLAYER_JOINED", f"{name} 已加入房间。", player["id"])
@@ -331,9 +345,14 @@ class Handler(BaseHTTPRequestHandler):
             if room["status"] != "waiting" or len(room["players"]) != 2:
                 self.send_json(HTTPStatus.CONFLICT, {"error": "NOT_READY", "message": "需要两名玩家都入席后才能开始。"})
                 return
+            if room.get("seatSwapRequestPlayerId"):
+                self.send_json(HTTPStatus.CONFLICT, {"error": "SEAT_SWAP_PENDING", "message": "请先处理交换先后手请求。"})
+                return
             room["game"] = create_game(room["mode"])
             room["status"] = "playing"
             room["seatSwapRequestPlayerId"] = None
+            room["undoRequestPlayerId"] = None
+            reset_undo_uses(room)
             room["version"] += 1
             room["updatedAt"] = now()
             set_event(room, "GAME_STARTED", "对局开始，黑方先行。", player["id"])
@@ -352,6 +371,9 @@ class Handler(BaseHTTPRequestHandler):
                 return
             if room["status"] != "playing" or not room["game"]:
                 self.send_json(HTTPStatus.CONFLICT, {"error": "GAME_NOT_PLAYING", "message": "当前没有进行中的对局。"})
+                return
+            if room.get("undoRequestPlayerId"):
+                self.send_json(HTTPStatus.CONFLICT, {"error": "UNDO_PENDING", "message": "请先处理当前的悔棋请求。"})
                 return
             if expected_version != room["version"]:
                 self.send_json(HTTPStatus.CONFLICT, {"error": "STALE_STATE", "message": "棋局已更新，请按最新棋盘重新选择落点。", "room": public_room(room)})
@@ -376,6 +398,9 @@ class Handler(BaseHTTPRequestHandler):
             if not room["game"]:
                 self.send_json(HTTPStatus.CONFLICT, {"error": "GAME_NOT_STARTED", "message": "对局尚未开始。"})
                 return
+            if room.get("undoRequestPlayerId"):
+                self.send_json(HTTPStatus.CONFLICT, {"error": "UNDO_PENDING", "message": "请先处理当前的悔棋请求。"})
+                return
             success, message = resign(room["game"], player["color"])
             if not success:
                 self.send_json(HTTPStatus.CONFLICT, {"error": "GAME_FINISHED", "message": message})
@@ -396,12 +421,17 @@ class Handler(BaseHTTPRequestHandler):
             if room["status"] != "finished":
                 self.send_json(HTTPStatus.CONFLICT, {"error": "GAME_NOT_FINISHED", "message": "本局尚未结束。"})
                 return
+            if room.get("seatSwapRequestPlayerId"):
+                self.send_json(HTTPStatus.CONFLICT, {"error": "SEAT_SWAP_PENDING", "message": "请先处理交换先后手请求。"})
+                return
             room["rematchVotes"].add(player["id"])
             if len(room["rematchVotes"]) == 2:
                 room["game"] = create_game(room["mode"])
                 room["status"] = "playing"
                 room["rematchVotes"].clear()
                 room["seatSwapRequestPlayerId"] = None
+                room["undoRequestPlayerId"] = None
+                reset_undo_uses(room)
                 message = "双方已确认，再来一局。"
                 event_type = "REMATCH_STARTED"
             else:
@@ -432,18 +462,28 @@ class Handler(BaseHTTPRequestHandler):
                 event_type = "SEAT_SWAP_CANCELLED"
                 message = f"{player['name']} 取消了交换先后手请求。"
             elif requester_id:
-                for participant in room["players"]:
-                    participant["color"] = WHITE if participant["color"] == BLACK else BLACK
-                room["seatSwapRequestPlayerId"] = None
-                room["rematchVotes"].clear()
-                if room["status"] == "finished":
-                    room["game"] = create_game(room["mode"])
-                    room["status"] = "playing"
-                    event_type = "SEATS_SWAPPED_AND_REMATCH_STARTED"
-                    message = "双方已交换先后手，下一局已开始，黑方先行。"
+                decision = data.get("decision", "accept")
+                if decision not in {"accept", "reject"}:
+                    raise ValueError("交换先后手的处理结果无效。")
+                if decision == "reject":
+                    room["seatSwapRequestPlayerId"] = None
+                    event_type = "SEAT_SWAP_REJECTED"
+                    message = f"{player['name']} 暂不交换先后手。"
                 else:
-                    event_type = "SEATS_SWAPPED"
-                    message = "双方已交换先后手。"
+                    for participant in room["players"]:
+                        participant["color"] = WHITE if participant["color"] == BLACK else BLACK
+                    room["seatSwapRequestPlayerId"] = None
+                    room["rematchVotes"].clear()
+                    if room["status"] == "finished":
+                        room["game"] = create_game(room["mode"])
+                        room["status"] = "playing"
+                        room["undoRequestPlayerId"] = None
+                        reset_undo_uses(room)
+                        event_type = "SEATS_SWAPPED_AND_REMATCH_STARTED"
+                        message = "双方已交换先后手，下一局已开始，黑方先行。"
+                    else:
+                        event_type = "SEATS_SWAPPED"
+                        message = "双方已交换先后手。"
             else:
                 room["seatSwapRequestPlayerId"] = player["id"]
                 event_type = "SEAT_SWAP_REQUESTED"
@@ -468,17 +508,46 @@ class Handler(BaseHTTPRequestHandler):
             if not game["moveHistory"]:
                 self.send_json(HTTPStatus.CONFLICT, {"error": "UNDO_UNAVAILABLE", "message": "当前没有可撤销的落子。"})
                 return
-            if player["color"] == game["moveHistory"][-1]["color"]:
-                self.send_json(HTTPStatus.FORBIDDEN, {"error": "UNDO_NOT_OPPONENT", "message": "只能由未落下最后一子的对方悔棋。"})
-                return
-            success, message = undo_last_move(game)
-            if not success:
-                self.send_json(HTTPStatus.CONFLICT, {"error": "UNDO_UNAVAILABLE", "message": message})
-                return
+            last_move_color = game["moveHistory"][-1]["color"]
+            requester_id = room.get("undoRequestPlayerId")
+            if not requester_id:
+                if player["color"] != last_move_color:
+                    self.send_json(HTTPStatus.FORBIDDEN, {"error": "UNDO_NOT_OWNER", "message": "只能申请撤销自己刚刚落下的最后一子。"})
+                    return
+                if room["undoUses"].get(player["id"], 0) >= 2:
+                    self.send_json(HTTPStatus.CONFLICT, {"error": "UNDO_LIMIT_REACHED", "message": "本局的两次悔棋机会已用完。"})
+                    return
+                room["undoRequestPlayerId"] = player["id"]
+                event_type = "UNDO_REQUESTED"
+                message = f"{player['name']} 请求撤销自己刚刚落下的最后一子。"
+            elif requester_id == player["id"]:
+                room["undoRequestPlayerId"] = None
+                event_type = "UNDO_CANCELLED"
+                message = f"{player['name']} 取消了悔棋请求。"
+            else:
+                if player["color"] == last_move_color:
+                    self.send_json(HTTPStatus.FORBIDDEN, {"error": "UNDO_NOT_RESPONDER", "message": "只有对方可以处理该悔棋请求。"})
+                    return
+                decision = data.get("decision", "accept")
+                if decision not in {"accept", "reject"}:
+                    raise ValueError("悔棋处理结果无效。")
+                room["undoRequestPlayerId"] = None
+                if decision == "reject":
+                    event_type = "UNDO_REJECTED"
+                    message = f"{player['name']} 拒绝了悔棋请求。"
+                else:
+                    success, message = undo_last_move(game)
+                    if not success:
+                        self.send_json(HTTPStatus.CONFLICT, {"error": "UNDO_UNAVAILABLE", "message": message})
+                        return
+                    room["undoUses"][requester_id] = room["undoUses"].get(requester_id, 0) + 1
+                    remaining = 2 - room["undoUses"][requester_id]
+                    message = f"{message} 对方本局还可悔棋 {remaining} 次。"
+                    event_type = "UNDO_APPLIED"
 
             room["version"] += 1
             room["updatedAt"] = now()
-            set_event(room, "UNDO_APPLIED", message, player["id"])
+            set_event(room, event_type, message, player["id"])
             response = public_room(room)
         self.send_json(HTTPStatus.OK, {"room": response})
         publish(code)

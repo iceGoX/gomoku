@@ -50,8 +50,9 @@ button, label { -webkit-tap-highlight-color: transparent; }
 .connection-dot { width: 8px; height: 8px; border-radius: 50%; background: #c48f37; box-shadow: 0 0 0 4px rgba(196, 143, 55, 0.12); }
 .connection-dot.online { background: #3a8567; box-shadow: 0 0 0 4px rgba(58, 133, 103, 0.12); }
 .quiet-button { transition: background 160ms ease, border-color 160ms ease, transform 160ms ease; }
-.quiet-button:hover { background: rgba(255, 255, 255, 0.8); border-color: rgba(56, 47, 34, 0.26); }
-.quiet-button:active { transform: scale(0.98); }
+.quiet-button:hover:not(:disabled) { background: rgba(255, 255, 255, 0.8); border-color: rgba(56, 47, 34, 0.26); }
+.quiet-button:active:not(:disabled) { transform: scale(0.98); }
+.quiet-button:disabled { cursor: not-allowed; opacity: 0.48; }
 .quiet-button kbd { margin-left: 7px; color: var(--muted); font-family: inherit; }
 
 main { width: min(1460px, calc(100% - 40px)); margin: 0 auto; padding: 34px 0 60px; }

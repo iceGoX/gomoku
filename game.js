@@ -4,6 +4,7 @@ const BLACK = 1;
 const WHITE = 2;
 const DIRECTIONS = [[1, 0], [0, 1], [1, 1], [1, -1]];
 const MAX_FORBIDDEN_DEPTH = 2;
+const MAX_UNDO_USES = 2;
 const COLUMNS = ["A", "B", "C", "D", "E", "F", "G", "H", "J", "K", "L", "M", "N", "O", "P"];
 const SESSION_KEY = "gomoku-room-session";
 const APP_BASE = new URL("./", window.location.href);
@@ -16,6 +17,14 @@ const elements = {
   rulesButton: document.querySelector("#rulesButton"),
   rulesDialog: document.querySelector("#rulesDialog"),
   resultDialog: document.querySelector("#resultDialog"),
+  seatSwapDialog: document.querySelector("#seatSwapDialog"),
+  seatSwapRequestMessage: document.querySelector("#seatSwapRequestMessage"),
+  approveSeatSwapButton: document.querySelector("#approveSeatSwapButton"),
+  rejectSeatSwapButton: document.querySelector("#rejectSeatSwapButton"),
+  undoRequestDialog: document.querySelector("#undoRequestDialog"),
+  undoRequestMessage: document.querySelector("#undoRequestMessage"),
+  approveUndoButton: document.querySelector("#approveUndoButton"),
+  rejectUndoButton: document.querySelector("#rejectUndoButton"),
   exitDialog: document.querySelector("#exitDialog"),
   exitDialogTitle: document.querySelector("#exitDialogTitle"),
   exitDialogMessage: document.querySelector("#exitDialogMessage"),
@@ -79,6 +88,7 @@ const state = {
   eventLoopId: 0,
   resultKey: null,
   statusOverride: null,
+  undoInFlight: null,
 };
 
 function loadSession() {
@@ -295,6 +305,8 @@ function createLocalGame(mode) {
     resultReason: null,
     lastMove: null,
     moveHistory: [],
+    undoRequest: null,
+    undoUses: { [BLACK]: 0, [WHITE]: 0 },
   };
 }
 
@@ -330,10 +342,63 @@ function currentPlayer() {
   return state.room?.players?.find((player) => player.id === state.session?.playerId) || null;
 }
 
+function roomUndo() {
+  return state.room?.undo || { requestPlayerId: null };
+}
+
+function applyRoomUpdate(room) {
+  if (state.room?.code === room.code && state.room.version > room.version) return false;
+  const resetPreview = state.room?.game?.turn !== room.game?.turn
+    || state.room?.undo?.requestPlayerId !== room.undo?.requestPlayerId;
+  state.room = room;
+  if (resetPreview) {
+    state.preview = null;
+    state.previewAnalysis = null;
+    clearStatusOverride();
+  }
+  return true;
+}
+
+function localUndoUsesRemaining(color) {
+  return Math.max(0, MAX_UNDO_USES - (currentGame()?.undoUses?.[color] || 0));
+}
+
+function onlineUndoUsesRemaining(playerId = state.session?.playerId) {
+  return Math.max(0, MAX_UNDO_USES - (roomUndo().uses?.[playerId] || 0));
+}
+
+function undoActionState() {
+  const game = currentGame();
+  const local = state.transport === "offline";
+  const lastMove = game?.moveHistory.at(-1);
+  const player = currentPlayer();
+  const color = local ? game?.undoRequest?.requesterColor ?? lastMove?.color ?? game?.currentColor : player?.color;
+  const remaining = local ? localUndoUsesRemaining(color) : onlineUndoUsesRemaining();
+  const playing = game?.status === "playing";
+  const pending = Boolean(playing && (local ? game.undoRequest : roomUndo().requestPlayerId));
+  const ownRequest = pending && (local || roomUndo().requestPlayerId === player?.id);
+  const incomingRequest = Boolean(pending && (local || (
+    player && !ownRequest && player.color === game.currentColor
+  )));
+  const busy = Boolean(state.undoInFlight);
+  return {
+    remaining,
+    pending,
+    ownRequest,
+    incomingRequest,
+    busy,
+    canRequest: Boolean(playing && !pending && !busy && remaining > 0
+      && lastMove && color === lastMove.color && color !== game.currentColor),
+    canCancel: ownRequest && !busy,
+    canRespond: incomingRequest && !busy,
+  };
+}
+
 function canAct() {
   const game = currentGame();
-  if (!game || game.status !== "playing") return false;
-  if (state.transport === "offline") return true;
+  if (!game || game.status !== "playing" || state.undoInFlight) return false;
+  if (state.transport === "offline") return !game.undoRequest;
+  if (roomUndo().requestPlayerId) return false;
   const player = currentPlayer();
   return Boolean(player && player.color === game.currentColor);
 }
@@ -360,6 +425,10 @@ async function apiRequest(path, options = {}) {
 
 function setStatus(message, error = false) {
   state.statusOverride = { message, error };
+  displayStatus(message, error);
+}
+
+function displayStatus(message, error = false) {
   elements.statusText.textContent = message;
   elements.statusLine.classList.toggle("error", error);
 }
@@ -403,6 +472,7 @@ function createBoard() {
 function renderBoard() {
   const game = currentGame();
   if (!game) return;
+  const canPlace = canAct();
   for (const button of elements.board.children) {
     const row = Number(button.dataset.row);
     const col = Number(button.dataset.col);
@@ -424,7 +494,7 @@ function renderBoard() {
     } else {
       button.setAttribute("aria-label", `${coordinateLabel(row, col)}，空位`);
     }
-    button.disabled = value !== EMPTY || game.status !== "playing";
+    button.disabled = value !== EMPTY || !canPlace;
   }
 }
 
@@ -456,6 +526,9 @@ function renderTurn() {
   if (game.status === "finished") {
     elements.turnEyebrow.textContent = "MATCH FINISHED";
     elements.turnTitle.textContent = game.winnerColor ? `${colorLabel(game.winnerColor)}获胜` : "本局和棋";
+  } else if (undoActionState().pending || state.undoInFlight) {
+    elements.turnEyebrow.textContent = "UNDO REQUEST";
+    elements.turnTitle.textContent = "悔棋确认中";
   } else if (canAct()) {
     elements.turnEyebrow.textContent = state.transport === "offline" ? "LOCAL TURN" : "YOUR TURN";
     elements.turnTitle.textContent = `${colorLabel(color)}，请选择落点`;
@@ -483,7 +556,9 @@ function renderPreview() {
   elements.previewStone.className = `preview-stone ${colorClass(game.currentColor)}`;
   if (!state.preview) {
     elements.previewCoordinate.textContent = "尚未选择";
-    elements.previewHint.textContent = canAct() ? "点击棋盘上的空交叉点" : "等待对方完成落子";
+    elements.previewHint.textContent = undoActionState().pending || state.undoInFlight
+      ? "请先处理悔棋请求"
+      : canAct() ? "点击棋盘上的空交叉点" : "当前是对方回合";
     elements.previewCard.classList.remove("illegal");
     elements.confirmButton.disabled = true;
     return;
@@ -491,22 +566,23 @@ function renderPreview() {
   elements.previewCoordinate.textContent = coordinateLabel(state.preview.row, state.preview.col);
   elements.previewHint.textContent = state.previewAnalysis?.message || "再次点击确认落子。";
   elements.previewCard.classList.toggle("illegal", !state.previewAnalysis?.legal);
-  elements.confirmButton.disabled = !state.previewAnalysis?.legal;
+  elements.confirmButton.disabled = !state.previewAnalysis?.legal || !canAct();
 }
 
 function renderUndoAction() {
   const game = currentGame();
-  if (!game) return;
-  const lastMove = game.moveHistory?.at(-1);
-  if (state.transport === "offline") {
-    elements.undoButton.textContent = "悔棋";
-    elements.undoButton.disabled = game.status !== "playing" || !lastMove;
-    return;
-  }
-  const me = currentPlayer();
-  const available = game.status === "playing" && lastMove && me?.color !== lastMove.color;
-  elements.undoButton.textContent = available ? "悔棋" : "等待对方落子";
-  elements.undoButton.disabled = !available;
+  const undo = undoActionState();
+  elements.undoButton.textContent = undo.ownRequest
+    ? "取消悔棋请求"
+    : `请求悔棋（剩余 ${undo.remaining} 次）`;
+  elements.undoButton.disabled = !undo.canRequest && !undo.canCancel;
+  elements.undoButton.setAttribute("aria-busy", String(undo.busy));
+  elements.undoButton.title = state.transport === "offline" && game?.moveHistory.length
+    ? `由${colorLabel(game.moveHistory.at(-1).color)}申请撤销自己刚下的最后一子，需对方同意。`
+    : "只能在自己落子后、对方落子前，申请撤销自己的最后一子；需对方同意。";
+  elements.approveUndoButton.disabled = !undo.canRespond;
+  elements.rejectUndoButton.disabled = !undo.canRespond;
+  elements.resignButton.disabled = game?.status !== "playing" || undo.pending || undo.busy;
 }
 
 function renderSeatSwapActions() {
@@ -537,16 +613,22 @@ function renderMoveLog() {
 }
 
 function renderStatus() {
-  if (state.statusOverride) {
-    setStatus(state.statusOverride.message, state.statusOverride.error);
-    return;
-  }
   const game = currentGame();
   if (!game) return;
-  if (game.status === "finished") setStatus("本局已经结束，可选择再来一局或返回大厅。", false);
-  else if (!canAct()) setStatus("当前是对方回合，棋盘将在对方落子后自动同步。", false);
-  else if (state.preview) setStatus(state.previewAnalysis?.message || "再次点击同一位置确认落子。", !state.previewAnalysis?.legal);
-  else setStatus("第一次点击预览虚子，第二次点击同一位置确认落子。", false);
+  const undo = undoActionState();
+  if (game.status === "finished") displayStatus("本局已经结束，可选择再来一局或返回大厅。");
+  else if (undo.busy) displayStatus("正在提交悔棋操作…");
+  else if (state.statusOverride?.error) displayStatus(state.statusOverride.message, true);
+  else if (undo.pending) {
+    const message = state.transport === "offline"
+      ? `已请求悔棋，请由${colorLabel(game.currentColor)}确认是否同意。`
+      : undo.ownRequest ? "已请求悔棋，等待对方确认。" : "对方请求悔棋，请在弹窗中处理。";
+    displayStatus(message);
+  }
+  else if (state.statusOverride) displayStatus(state.statusOverride.message, state.statusOverride.error);
+  else if (!canAct()) displayStatus("当前是对方回合，棋盘将在对方落子后自动同步。");
+  else if (state.preview) displayStatus(state.previewAnalysis?.message || "再次点击同一位置确认落子。", !state.previewAnalysis?.legal);
+  else displayStatus("第一次点击预览虚子，第二次点击同一位置确认落子。");
 }
 
 function renderGame() {
@@ -563,6 +645,7 @@ function renderGame() {
   renderStatus();
   renderSeatSwapActions();
   maybeShowResult();
+  maybeShowUndoRequest();
 }
 
 function renderWaiting() {
@@ -596,12 +679,15 @@ function renderRoom() {
     showScreen("game");
     renderGame();
   }
+  maybeShowSeatSwapRequest();
 }
 
 function handleIntersection(row, col) {
   const game = currentGame();
   if (!game || !canAct()) {
-    setStatus("当前不能落子，请等待自己的回合。", true);
+    setStatus(undoActionState().pending || state.undoInFlight
+      ? "请先处理当前的悔棋请求。"
+      : "当前不能落子，请等待自己的回合。", true);
     return;
   }
   if (valueAt(game.board, row, col) !== EMPTY) return;
@@ -617,7 +703,7 @@ function handleIntersection(row, col) {
 }
 
 async function confirmMove() {
-  if (!state.preview || !state.previewAnalysis?.legal) return;
+  if (!state.preview || !state.previewAnalysis?.legal || !canAct()) return;
   const { row, col } = state.preview;
   elements.confirmButton.disabled = true;
   if (state.transport === "offline") {
@@ -656,6 +742,7 @@ function undoLocalMove() {
   const game = state.localGame;
   const move = game?.moveHistory.at(-1);
   if (!move) return;
+  const requesterColor = game.undoRequest?.requesterColor;
   game.board[indexOf(move.row, move.col)] = EMPTY;
   game.moveHistory.pop();
   game.currentColor = move.color;
@@ -664,6 +751,8 @@ function undoLocalMove() {
   game.lastMove = lastMove ? [lastMove.row, lastMove.col] : null;
   game.winnerColor = null;
   game.resultReason = null;
+  if (requesterColor) game.undoUses[requesterColor] = (game.undoUses[requesterColor] || 0) + 1;
+  game.undoRequest = null;
   state.preview = null;
   state.previewAnalysis = null;
   clearStatusOverride();
@@ -672,30 +761,57 @@ function undoLocalMove() {
 
 async function requestUndo() {
   const game = currentGame();
-  if (!game) return;
+  const undo = undoActionState();
+  if (!undo.canRequest && !undo.canCancel) return;
   if (state.transport === "offline") {
-    undoLocalMove();
-    return;
-  }
-  elements.undoButton.disabled = true;
-  try {
-    const result = await apiRequest(`rooms/${state.room.code}/undo`, { body: "{}" });
-    state.room = result.room;
+    game.undoRequest = undo.canCancel ? null : { requesterColor: game.moveHistory.at(-1).color };
     state.preview = null;
     state.previewAnalysis = null;
     clearStatusOverride();
-    renderRoom();
+    renderGame();
+    return;
+  }
+  await submitUndoAction(undo.canCancel ? "cancel" : "request");
+}
+
+async function respondToUndo(decision) {
+  if (!["accept", "reject"].includes(decision) || !undoActionState().canRespond) return;
+  if (state.transport === "offline") {
+    const game = state.localGame;
+    if (decision === "accept") undoLocalMove();
+    else {
+      game.undoRequest = null;
+      clearStatusOverride();
+      renderGame();
+    }
+    return;
+  }
+  await submitUndoAction(decision);
+}
+
+async function submitUndoAction(action) {
+  const code = state.room.code;
+  state.undoInFlight = action;
+  clearStatusOverride();
+  renderGame();
+  try {
+    const body = ["accept", "reject"].includes(action) ? { decision: action } : {};
+    const result = await apiRequest(`rooms/${code}/undo`, { body: JSON.stringify(body) });
+    if (state.room?.code === code) applyRoomUpdate(result.room);
   } catch (error) {
-    setStatus(error.message, true);
+    if (state.room?.code === code) setStatus(error.message, true);
+  } finally {
+    state.undoInFlight = null;
     renderRoom();
   }
 }
 
-async function swapSeats() {
+async function swapSeats(decision = null) {
   if (!state.room) return;
   const waiting = state.room.status === "waiting";
   try {
-    const result = await apiRequest(`rooms/${state.room.code}/swap`, { body: "{}" });
+    const body = decision ? JSON.stringify({ decision }) : "{}";
+    const result = await apiRequest(`rooms/${state.room.code}/swap`, { body });
     state.room = result.room;
     clearStatusOverride();
     renderRoom();
@@ -703,6 +819,47 @@ async function swapSeats() {
     if (waiting) elements.waitingMessage.textContent = error.message;
     else setStatus(error.message, true);
   }
+}
+
+function respondToSeatSwap(decision) {
+  swapSeats(decision);
+}
+
+function maybeShowSeatSwapRequest() {
+  const requesterId = state.room?.seatSwapRequestPlayerId;
+  const isRecipient = state.transport === "online"
+    && requesterId
+    && requesterId !== state.session?.playerId
+    && ["waiting", "finished"].includes(state.room?.status);
+  if (!isRecipient) {
+    if (elements.seatSwapDialog.open) elements.seatSwapDialog.close();
+    return;
+  }
+  const requester = state.room.players.find((player) => player.id === requesterId);
+  elements.seatSwapRequestMessage.textContent = state.room.status === "finished"
+    ? `${requester?.name || "对方"} 希望下一局交换先后手；同意后将立即开始新对局。`
+    : `${requester?.name || "对方"} 希望在开局前交换先后手。`;
+  if (elements.resultDialog.open) elements.resultDialog.close();
+  if (!elements.seatSwapDialog.open) elements.seatSwapDialog.showModal();
+}
+
+function maybeShowUndoRequest() {
+  const game = currentGame();
+  if (!undoActionState().incomingRequest) {
+    if (elements.undoRequestDialog.open) elements.undoRequestDialog.close();
+    return;
+  }
+  if (state.transport === "offline") {
+    const remaining = localUndoUsesRemaining(game.undoRequest.requesterColor);
+    elements.undoRequestMessage.textContent = `请由${colorLabel(game.currentColor)}确认：是否同意${colorLabel(game.undoRequest.requesterColor)}撤销自己刚刚落下的一颗棋子？同意后，申请方还剩 ${remaining - 1} 次悔棋机会。`;
+    if (!elements.undoRequestDialog.open) elements.undoRequestDialog.showModal();
+    return;
+  }
+  const requesterId = roomUndo().requestPlayerId;
+  const requester = state.room.players.find((player) => player.id === requesterId);
+  const remaining = onlineUndoUsesRemaining(requesterId);
+  elements.undoRequestMessage.textContent = `${requester?.name || "对方"} 希望撤销自己刚刚落下的最后一颗棋子。同意后，对方还剩 ${remaining - 1} 次悔棋机会。`;
+  if (!elements.undoRequestDialog.open) elements.undoRequestDialog.showModal();
 }
 
 function maybeShowResult() {
@@ -836,14 +993,7 @@ async function startEventLoop() {
           const dataLine = event.split("\n").find((line) => line.startsWith("data: "));
           if (!dataLine) continue;
           const room = JSON.parse(dataLine.slice(6));
-          const previousTurn = state.room?.game?.turn;
-          state.room = room;
-          if (previousTurn !== room.game?.turn) {
-            state.preview = null;
-            state.previewAnalysis = null;
-            clearStatusOverride();
-          }
-          renderRoom();
+          if (applyRoomUpdate(room)) renderRoom();
         }
       }
     } catch (error) {
@@ -1017,6 +1167,11 @@ function bindEvents() {
   elements.rematchButton.addEventListener("click", rematch);
   elements.resultSwapSeatsButton.addEventListener("click", swapSeats);
   elements.resultLobbyButton.addEventListener("click", leaveRoom);
+  elements.approveSeatSwapButton.addEventListener("click", () => respondToSeatSwap("accept"));
+  elements.rejectSeatSwapButton.addEventListener("click", () => respondToSeatSwap("reject"));
+  elements.approveUndoButton.addEventListener("click", () => respondToUndo("accept"));
+  elements.rejectUndoButton.addEventListener("click", () => respondToUndo("reject"));
+  [elements.seatSwapDialog, elements.undoRequestDialog].forEach((dialog) => dialog.addEventListener("cancel", (event) => event.preventDefault()));
   window.addEventListener("keydown", (event) => {
     if (event.key === "?" && !elements.rulesDialog.open) elements.rulesDialog.showModal();
     if (event.key === "Escape" && state.preview && !elements.rulesDialog.open && !elements.confirmDialog.open && !elements.exitDialog.open) clearPreview();

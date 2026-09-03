@@ -118,7 +118,7 @@
           </div>
           <button class="primary-button confirm-button" id="confirmButton" type="button" disabled>确认落子</button>
           <div class="match-actions">
-            <button class="quiet-button" id="undoButton" type="button" disabled>悔棋</button>
+            <button class="quiet-button" id="undoButton" type="button" disabled>请求悔棋（剩余 2 次）</button>
             <button class="quiet-button danger" id="resignButton" type="button">认输</button>
           </div>
           <div class="move-log">
@@ -154,6 +154,22 @@
           <button class="quiet-button" id="resultLobbyButton" type="button">回到大厅</button>
         </div>
       </div>
+    </dialog>
+
+    <dialog class="confirm-dialog" id="seatSwapDialog">
+      <form method="dialog">
+        <h2>对方请求交换先后手</h2>
+        <p id="seatSwapRequestMessage">同意后将交换黑白方。</p>
+        <div><button class="quiet-button" id="rejectSeatSwapButton" value="reject">暂不交换</button><button class="primary-button" id="approveSeatSwapButton" value="accept">同意交换</button></div>
+      </form>
+    </dialog>
+
+    <dialog class="confirm-dialog" id="undoRequestDialog">
+      <form method="dialog">
+        <h2>对方请求悔棋</h2>
+        <p id="undoRequestMessage">对方希望撤销自己刚刚落下的一颗棋子。</p>
+        <div><button class="quiet-button" id="rejectUndoButton" type="button">拒绝</button><button class="primary-button" id="approveUndoButton" type="button">同意悔棋</button></div>
+      </form>
     </dialog>
 
     <dialog class="confirm-dialog" id="exitDialog">
