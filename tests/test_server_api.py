@@ -1,10 +1,22 @@
 import json
+import queue
 import threading
 import unittest
 import urllib.error
 import urllib.request
 
-from server.app import GomokuServer, Handler, rooms, subscribers
+from server.app import (
+    RATE_LIMIT_WINDOW_SECONDS,
+    STREAM_CLOSED,
+    WAITING_ROOM_TTL_SECONDS,
+    MAX_ACTIVE_ROOMS_PER_IP,
+    GomokuServer,
+    Handler,
+    cleanup_expired_state,
+    request_times,
+    rooms,
+    subscribers,
+)
 
 
 class ServerApiTests(unittest.TestCase):
@@ -24,6 +36,7 @@ class ServerApiTests(unittest.TestCase):
     def setUp(self):
         rooms.clear()
         subscribers.clear()
+        request_times.clear()
 
     def request(self, path, body=None, session=None):
         headers = {}
@@ -64,6 +77,30 @@ class ServerApiTests(unittest.TestCase):
         status, result = self.request(f"/api/rooms/{code}/start", {}, created)
         self.assertEqual(status, 409)
         self.assertEqual(result["error"], "NOT_READY")
+
+    def test_cleanup_expires_connected_room_and_prunes_rate_limit_state(self):
+        created = self.create_room()
+        code = created["room"]["code"]
+        channel = queue.Queue(maxsize=4)
+        closed = threading.Event()
+        channel.put_nowait("old room update")
+        subscribers[code].append({"playerId": created["playerId"], "queue": channel, "closed": closed})
+        current = rooms[code]["updatedAt"] + WAITING_ROOM_TTL_SECONDS + 1
+        request_times["stale-ip"].append(current - RATE_LIMIT_WINDOW_SECONDS - 1)
+
+        self.assertEqual(cleanup_expired_state(current), [code])
+        self.assertNotIn(code, rooms)
+        self.assertNotIn(code, subscribers)
+        self.assertTrue(closed.is_set())
+        self.assertIs(channel.get_nowait(), STREAM_CLOSED)
+        self.assertNotIn("stale-ip", request_times)
+
+    def test_room_creation_is_bounded_per_ip(self):
+        for _ in range(MAX_ACTIVE_ROOMS_PER_IP):
+            self.create_room()
+        status, result = self.request("/api/rooms", {"name": "额外房主", "mode": "normal"})
+        self.assertEqual(status, 429)
+        self.assertEqual(result["error"], "ROOM_LIMIT_REACHED")
 
     def test_server_accepts_authoritative_move_and_rejects_wrong_turn(self):
         created = self.create_room("professional")
