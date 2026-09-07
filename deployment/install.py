@@ -28,6 +28,8 @@ def install(source: Path, domain: str) -> None:
         source / "index.html",
         source / "styles.css",
         source / "game.js",
+        source / "assets/design/gomoku-hero.jpg",
+        source / "assets/design/maple-board.jpg",
         source / "server" / "app.py",
         source / "server" / "game_engine.py",
         source / "deployment" / "gomoku.service",
@@ -39,7 +41,7 @@ def install(source: Path, domain: str) -> None:
 
     for relative in ("server/app.py", "server/game_engine.py", "server/__init__.py"):
         copy_file(source / relative, APP_ROOT / relative)
-    for relative in ("index.html", "styles.css", "game.js"):
+    for relative in ("index.html", "styles.css", "game.js", "assets/design/gomoku-hero.jpg", "assets/design/maple-board.jpg"):
         copy_file(source / relative, WEB_ROOT / relative)
     copy_file(source / "deployment" / "gomoku.service", SERVICE_FILE)
     copy_file(source / "deployment" / "nginx-gomoku.conf", NGINX_SNIPPET)

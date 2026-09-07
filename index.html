@@ -2,8 +2,8 @@
 <html lang="zh-CN">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
-    <meta name="theme-color" content="#efe5d2" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#fcf8ef" />
     <meta name="description" content="支持在线房间、离线双人、普通模式与连珠专业规则的网页五子棋" />
     <title>弈五 · 在线五子棋</title>
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='16' fill='%23d8a95f'/%3E%3Cpath d='M8 20h48M8 32h48M8 44h48M20 8v48M32 8v48M44 8v48' stroke='%23745a36' stroke-width='2'/%3E%3Ccircle cx='32' cy='32' r='11' fill='%231b1b1a'/%3E%3C/svg%3E" />
@@ -27,9 +27,10 @@
     <main>
       <section class="lobby" id="lobbyScreen">
         <div class="lobby-copy">
-          <p class="eyebrow">FIVE IN A ROW</p>
-          <h1>一张棋盘，<br /><em>两种胜负逻辑。</em></h1>
-          <p>普通模式轻松下，专业模式按连珠核心规则裁决。在线邀请朋友，或直接在同一台设备离线对弈。</p>
+          <img class="lobby-art" src="assets/design/gomoku-hero.jpg" width="1000" height="400" alt="" aria-hidden="true" fetchpriority="high" />
+          <p class="eyebrow">GOMOKU · 与友对弈</p>
+          <h1>闲来一局，<br /><em>落子有趣。</em></h1>
+          <p>邀一位好友，慢慢下一局。普通模式轻松玩，专业模式认真较量；也可以在同一台设备轮流对弈。</p>
           <div class="feature-row" aria-label="产品特点">
             <span><b>15×15</b> 标准棋盘</span>
             <span><b>双击</b> 确认落子</span>
@@ -38,6 +39,10 @@
         </div>
 
         <div class="lobby-card">
+          <div class="online-tabs" role="tablist" aria-label="在线进入方式">
+            <button class="online-tab active" data-tab="create" role="tab" aria-selected="true" type="button">创建房间</button>
+            <button class="online-tab" data-tab="join" role="tab" aria-selected="false" type="button">加入房间</button>
+          </div>
           <div class="mode-heading">
             <div><p class="eyebrow">RULE SET</p><h2>选择规则</h2></div>
             <span class="mode-badge" id="modeBadge">普通</span>
@@ -53,23 +58,20 @@
             </label>
           </div>
 
-          <div class="online-tabs" role="tablist" aria-label="在线进入方式">
-            <button class="online-tab active" data-tab="create" role="tab" aria-selected="true" type="button">创建房间</button>
-            <button class="online-tab" data-tab="join" role="tab" aria-selected="false" type="button">加入房间</button>
-          </div>
           <form class="online-form" id="createForm">
-            <label><span>你的昵称</span><input id="createName" maxlength="16" autocomplete="nickname" placeholder="例如：天元棋手" required /></label>
+            <label><span>你的昵称</span><input id="createName" maxlength="16" autocomplete="nickname" placeholder="例如：小竹" required /></label>
             <button class="primary-button" type="submit">创建双人房间</button>
           </form>
           <form class="online-form hidden" id="joinForm">
-            <label><span>你的昵称</span><input id="joinName" maxlength="16" autocomplete="nickname" placeholder="例如：白棋手" required /></label>
+            <label><span>你的昵称</span><input id="joinName" maxlength="16" autocomplete="nickname" placeholder="例如：小禾" required /></label>
             <label><span>六位房间号</span><input class="code-input" id="joinCode" maxlength="6" autocomplete="off" autocapitalize="characters" placeholder="A7K92M" required /></label>
             <button class="primary-button" type="submit">加入房间</button>
+            <p class="join-rule-note">本局规则由房主创建时确定；离线沿用创建页所选规则。</p>
           </form>
           <p class="form-message" id="lobbyMessage" aria-live="polite"></p>
           <button class="offline-entry" id="offlineButton" type="button">
             <span class="offline-icon" aria-hidden="true">◉</span>
-            <span><strong>离线双人对弈</strong><small>不创建房间，一台设备轮流操作黑白双方</small></span>
+            <span><strong>离线双人对弈</strong><small>一台设备，轮流操作黑白双方</small></span>
             <span aria-hidden="true">→</span>
           </button>
         </div>
@@ -78,7 +80,8 @@
       <section class="waiting hidden" id="waitingScreen">
         <div class="waiting-card">
           <p class="eyebrow">PRIVATE ROOM</p>
-          <h1>等待白方入席</h1>
+          <h1>等一位棋友，<br />共下一局。</h1>
+          <img class="waiting-art" src="assets/design/gomoku-hero.jpg" width="1000" height="400" alt="" aria-hidden="true" />
           <p>把六位房间号发给朋友。两名棋手都到齐后，由房主开始。</p>
           <button class="large-code" id="copyRoomCodeButton" type="button"><span>房间号</span><b id="waitingRoomCode">------</b><small>点击复制</small></button>
           <div class="seat-list" id="seatList"></div>
@@ -111,7 +114,7 @@
 
         <aside class="game-panel">
           <div class="panel-heading"><div><p class="eyebrow">MATCH INFO</p><h2 id="panelModeTitle">普通模式</h2></div><span class="online-state" id="onlineState">离线</span></div>
-          <div class="rule-summary" id="ruleSummary"></div>
+          <details class="rule-disclosure"><summary>本局规则</summary><div class="rule-summary" id="ruleSummary"></div></details>
           <div class="preview-card" id="previewCard">
             <div class="preview-stone black" id="previewStone" aria-hidden="true"></div>
             <div><span>待确认落点</span><strong id="previewCoordinate">尚未选择</strong><small id="previewHint">点击棋盘上的空交叉点</small></div>
@@ -121,10 +124,10 @@
             <button class="quiet-button" id="undoButton" type="button" disabled>请求悔棋（剩余 2 次）</button>
             <button class="quiet-button danger" id="resignButton" type="button">认输</button>
           </div>
-          <div class="move-log">
-            <div class="move-log-heading"><h3>最近落子</h3><span id="moveCount">0 手</span></div>
+          <details class="move-log" open>
+            <summary class="move-log-heading"><span>最近落子</span><span id="moveCount">0 手</span></summary>
             <ol id="moveList"><li class="empty-log">棋局开始后会记录坐标</li></ol>
-          </div>
+          </details>
         </aside>
       </section>
     </main>
@@ -136,7 +139,7 @@
           <section><b>01</b><h3>双击确认</h3><p>第一次点击显示半透明虚子；再次点击同一交叉点才真正落子。点击其他位置会移动虚子。</p></section>
           <section><b>02</b><h3>普通模式</h3><p>黑白交替落子，不设禁手。任一方在横、竖或斜线连成五子或更多即胜。</p></section>
           <section><b>03</b><h3>专业模式</h3><p>15×15 棋盘，黑方首手天元。黑方禁止长连、四四与三三，恰好五连获胜；白方五连或长连获胜。</p></section>
-          <section><b>04</b><h3>在线裁决</h3><p>在线房间由服务端验证回合、落点、胜负和禁手；浏览器只负责预览，不拥有最终裁决权。</p></section>
+          <section><b>04</b><h3>与好友对弈</h3><p>在线分享房间号，棋友到齐后由房主开始；离线则在同一台设备轮流落子。悔棋需要另一方同意。</p></section>
         </div>
         <p class="dialog-note">专业模式实现连珠核心棋规。国际正式比赛还会按赛事另选 Soosyrv、Taraguchi 等开局规程，本模式暂不模拟编珠与换手阶段。</p>
       </form>

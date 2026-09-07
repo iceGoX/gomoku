@@ -1,18 +1,18 @@
 :root {
-  --paper: #f5efe4;
-  --paper-deep: #e9decc;
-  --ink: #1e211f;
-  --muted: #6d6a61;
+  --paper: #fcf8ef;
+  --paper-deep: #ede7da;
+  --ink: #293b34;
+  --muted: #687168;
   --line: rgba(56, 47, 34, 0.16);
-  --green: #244d3f;
-  --green-soft: #e3ece6;
-  --red: #a84d3d;
-  --wood: #d6a75f;
+  --green: #4f7d6e;
+  --green-soft: #e7eee7;
+  --red: #ad5d4a;
+  --wood: #dab884;
   --wood-dark: #765c36;
   --white-stone: #f7f4eb;
-  --shadow: 0 20px 60px rgba(66, 48, 24, 0.12);
-  --radius-lg: 30px;
-  --radius-md: 20px;
+  --shadow: 0 10px 32px rgba(66, 48, 24, 0.05);
+  --radius-lg: 18px;
+  --radius-md: 14px;
   font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   color: var(--ink);
   background: var(--paper);
@@ -304,4 +304,153 @@ dialog::backdrop { background: rgba(24, 25, 23, 0.5); backdrop-filter: blur(6px)
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { scroll-behavior: auto !important; animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; }
+}
+
+/* Approved UI: cream surfaces, natural maple, contemporary Chinese typography. */
+body { background: var(--paper); }
+.topbar, main { width: min(1240px, calc(100% - 64px)); }
+.topbar { height: 84px; border-bottom: 1px solid var(--line); }
+.brand strong { font-size: 27px; font-weight: 500; letter-spacing: .05em; }
+.brand small { font-size: 9px; letter-spacing: .14em; }
+.brand-mark { background: var(--wood) url("assets/design/maple-board.jpg") center / cover; box-shadow: inset 0 0 0 1px #b99d7166; }
+button:focus-visible, summary:focus-visible { outline: 3px solid var(--green); outline-offset: 4px; }
+.mode-picker input:focus-visible + span { outline: 3px solid var(--green); outline-offset: 3px; }
+.room-chip, .quiet-button, .icon-button { min-height: 44px; border-radius: 12px; }
+.icon-button { width: 44px; height: 44px; flex-shrink: 0; }
+.lobby { min-height: calc(100svh - 180px); grid-template-columns: minmax(0, 1.12fr) minmax(350px, .88fr); gap: clamp(44px, 6vw, 90px); padding: 12px 0 32px; }
+.lobby-copy { padding: 0; max-width: 560px; }
+.lobby-art { display: block; width: 100%; height: auto; aspect-ratio: 2.5; object-fit: contain; margin: 0 0 24px; border-radius: 16px; }
+.lobby-copy h1 { font-size: clamp(38px, 4vw, 58px); line-height: 1.4; letter-spacing: .015em; }
+.lobby-copy > p:not(.eyebrow) { margin: 20px 0; font-size: 15px; line-height: 1.8; max-width: 430px; }
+.feature-row { gap: 14px; }
+.feature-row span { padding: 0; border: 0; background: none; font-size: 12px; }
+.lobby-card { padding: 28px; background: #fffdf780; backdrop-filter: none; box-shadow: none; }
+.online-tabs { padding: 0; margin-bottom: 24px; background: none; border-radius: 0; border-bottom: 1px solid var(--line); }
+.online-tab { min-height: 48px; border-radius: 0; font-size: 14px; border-bottom: 2px solid transparent; }
+.online-tab.active { background: none; border-bottom-color: var(--green); box-shadow: none; }
+.mode-heading h2 { font-family: inherit; font-size: 14px; font-weight: 600; }
+.mode-heading .eyebrow { display: none; }
+.mode-badge { padding: 4px 8px; font-size: 12px; }
+.mode-picker { margin: 12px 0 20px; gap: 8px; }
+.mode-picker span { min-height: 80px; border-radius: 12px; padding: 12px; }
+.mode-picker input:checked + span { box-shadow: none; }
+.mode-picker small { font-size: 12px; line-height: 1.5; }
+.lobby-card:has(.online-tab[data-tab="join"].active) .mode-heading,
+.lobby-card:has(.online-tab[data-tab="join"].active) .mode-picker { display: none; }
+.online-form input { border-radius: 12px; background: #fffdf8; min-height: 48px; }
+.online-form label > span, .form-message { font-size: 13px; }
+.primary-button { min-height: 50px; border-radius: 12px; box-shadow: none; }
+.join-rule-note { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.6; }
+.offline-entry { margin-top: 16px; padding-top: 20px; }
+.offline-entry small { font-size: 12px; }
+.waiting-card { width: min(540px, 100%); padding: 30px; background: #fffdf780; backdrop-filter: none; box-shadow: none; }
+.waiting-card h1 { font-size: clamp(30px, 4vw, 42px); line-height: 1.4; }
+.waiting-art { display: block; width: 100%; height: auto; aspect-ratio: 2.5; object-fit: contain; margin: 20px 0; border-radius: 12px; }
+.large-code { border-style: solid; border-radius: 12px; background: transparent; margin: 18px 0; }
+.large-code b { color: var(--green); font-size: 30px; }
+.large-code span, .large-code small { font-size: 12px; }
+.seat-list { grid-template-columns: 1fr; gap: 0; border: 1px solid var(--line); border-radius: 14px; padding: 0 16px; }
+.seat { border: 0; border-radius: 0; border-bottom: 1px solid var(--line); padding: 15px 0; }
+.seat:last-child { border-bottom: 0; }
+.waiting-actions { grid-template-columns: 1fr; }
+#leaveWaitingButton { color: var(--red); }
+.game-shell { grid-template-columns: minmax(0, 1fr) 300px; gap: 30px; }
+body[data-screen="game"] main { padding-top: 20px; }
+.board-column { max-width: 840px; }
+.turn-card { border: 0; border-radius: 0; padding: 10px 0; background: none; }
+.player-card { border: 0; border-radius: 10px; border-bottom: 2px solid transparent; background: none; }
+.player-card.active { background: var(--green-soft); border-bottom-color: var(--green); }
+.player-card strong { font-size: 14px; }
+.player-card small { font-size: 12px; }
+.board-wrap { width: 100%; min-width: 0; max-width: 800px; padding: clamp(18px, 2.7vw, 32px); border-radius: 16px; background: var(--wood) url("assets/design/maple-board.jpg") center / cover; box-shadow: inset 0 0 0 1px #ab8d5866, 0 6px 12px #5b3f231a; }
+.coordinate.top { left: clamp(18px, 2.7vw, 32px); right: clamp(18px, 2.7vw, 32px); }
+.coordinate.left { top: clamp(18px, 2.7vw, 32px); bottom: clamp(18px, 2.7vw, 32px); }
+.coordinate { color: #705b3d; }
+.game-panel { padding: 24px 0 0 24px; border: 0; border-left: 1px solid var(--line); border-radius: 0; background: none; box-shadow: none; backdrop-filter: none; }
+.panel-heading h2 { font-size: 25px; }
+.panel-heading .eyebrow { display: none; }
+.rule-disclosure { margin: 18px 0; color: var(--muted); }
+.rule-disclosure summary { font-size: 14px; cursor: pointer; min-height: 30px; }
+.rule-summary { margin: 10px 0 0; }
+.rule-summary p { font-size: 13px; }
+.preview-card { border-radius: 12px; padding: 14px; background: #fffdf780; }
+.preview-stone { width: 36px; height: 36px; }
+.preview-card span, .preview-card small { font-size: 12px; }
+.preview-card small { white-space: normal; overflow: visible; }
+.preview-card strong { color: var(--green); font-size: 24px; }
+.match-actions { grid-template-columns: 1fr; }
+.match-actions .quiet-button { font-size: 14px; min-height: 44px; }
+.status-line { border: 0; background: none; padding: 10px 0; }
+.status-line p { font-size: 13px; }
+.move-log-heading { cursor: pointer; min-height: 36px; }
+.move-log-heading > span:first-child { color: var(--ink); font-size: 16px; font-family: Georgia, "Songti SC", serif; }
+.move-log li { font-size: 13px; }
+dialog { max-height: calc(100svh - 32px); overflow-y: auto; }
+dialog::backdrop { background: #273b344d; backdrop-filter: blur(3px); }
+.rules-dialog form, .result-card, .confirm-dialog form { border: 1px solid var(--line); border-radius: 18px; background: var(--paper); box-shadow: 0 20px 70px #23342826; }
+.rule-grid section { background: none; border: 0; border-bottom: 1px solid var(--line); border-radius: 0; padding: 16px 0; }
+.rule-grid { gap: 16px 24px; }
+.rule-grid p, .dialog-note { font-size: 14px; line-height: 1.7; }
+.result-symbol { background: var(--wood) url("assets/design/maple-board.jpg") center / cover; }
+.result-actions { grid-template-columns: 1fr; }
+.confirm-dialog p { font-size: 14px; line-height: 1.7; }
+@media (max-width: 900px) {
+  .topbar, main { width: min(720px, calc(100% - 40px)); }
+  .lobby { grid-template-columns: 1fr; gap: 24px; min-height: auto; max-width: 540px; margin: auto; }
+  .lobby-copy { max-width: none; }
+  .lobby-copy h1 { font-size: 40px; }
+  .lobby-art { max-height: 195px; margin-bottom: 18px; }
+  .game-shell { grid-template-columns: 1fr; gap: 14px; }
+  .board-column { display: block; }
+  .turn-card { margin: 0 0 8px; }
+  .player-strip { margin: 0 0 12px; }
+  .game-panel { position: static; display: grid; grid-template-columns: 1fr 1fr; gap: 12px; padding: 16px 0 0; border-left: 0; border-top: 1px solid var(--line); }
+  .game-panel .panel-heading { grid-column: 1 / -1; }
+  .rule-disclosure { grid-column: 1 / -1; grid-row: 5; margin: 0; }
+  .preview-card { grid-column: 1; grid-row: 2 / span 2; }
+  .confirm-button { grid-column: 2; grid-row: 2; margin: 0; }
+  .match-actions { grid-column: 2; grid-row: 3; grid-template-columns: 1fr 1fr; margin: 0; }
+  .move-log { grid-column: 1 / -1; grid-row: 4; margin-top: 4px; padding-top: 8px; }
+}
+@media (max-width: 560px) {
+  .topbar, main { width: calc(100% - 32px); }
+  .topbar { height: 70px; gap: 10px; }
+  .header-status { gap: 6px; }
+  .header-status .quiet-button, .room-chip { min-height: 44px; padding: 0 10px; }
+  .lobby { padding-top: 4px; gap: 20px; }
+  .lobby-copy h1 { font-size: 32px; }
+  .lobby-art { margin: 0 0 16px; }
+  .lobby-copy > p:not(.eyebrow) { font-size: 14px; margin: 12px 0; }
+  .lobby-copy .eyebrow, .feature-row { display: none; }
+  .lobby-card { padding: 0; border: 0; border-radius: 0; background: none; }
+  .online-tabs { margin-bottom: 18px; }
+  .mode-picker { grid-template-columns: 1fr 1fr; }
+  .mode-picker span { min-height: 84px; padding: 10px; }
+  .waiting-card { padding: 22px 16px; }
+  .waiting-art { margin: 14px 0; }
+  .board-wrap { padding: 18px; }
+  .coordinate.top { left: 18px; right: 18px; }
+  .coordinate.left { top: 18px; bottom: 18px; }
+  .game-panel { grid-template-columns: 1fr; }
+  .game-panel .panel-heading { grid-row: 1; }
+  .preview-card { grid-column: 1; grid-row: 2; min-height: 70px; }
+  .confirm-button { grid-column: 1; grid-row: 3; }
+  .match-actions { grid-column: 1; grid-row: 4; }
+  .game-panel .move-log { grid-row: 5; }
+  .rule-disclosure { grid-row: 6; }
+  .rule-grid { grid-template-columns: 1fr; }
+  .rules-dialog { width: calc(100% - 20px); }
+  .dialog-heading h2 { font-size: 25px; }
+}
+
+@media (max-width: 560px) {
+  .lobby-copy > p:not(.eyebrow) { display: none; }
+  .lobby-art { max-height: 145px; }
+  .lobby-copy h1 { font-size: 30px; line-height: 1.35; }
+  .lobby { gap: 12px; }
+  .offline-entry { margin-top: 8px; }
+}
+
+@media (min-width: 901px) {
+  .board-wrap { width: min(100%, max(360px, calc(100svh - 210px))); }
 }

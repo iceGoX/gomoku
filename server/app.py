@@ -36,6 +36,8 @@ STATIC_FILES = {
     "/index.html": ROOT / "index.html",
     "/styles.css": ROOT / "styles.css",
     "/game.js": ROOT / "game.js",
+    "/assets/design/gomoku-hero.jpg": ROOT / "assets/design/gomoku-hero.jpg",
+    "/assets/design/maple-board.jpg": ROOT / "assets/design/maple-board.jpg",
 }
 
 rooms: dict[str, dict] = {}
