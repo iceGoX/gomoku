@@ -1,0 +1,18 @@
+<svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="64.000000" height="64.000000" fill="none" clip-path="url(#clipPath_0)" customFrame="url(#clipPath_0)">
+	<defs>
+		<clipPath id="clipPath_0">
+			<rect width="64.000000" height="64.000000" x="0.000001" y="0.000001" rx="14.000000" fill="rgb(255,255,255)" />
+		</clipPath>
+	</defs>
+	<rect id="五子棋" width="64.000000" height="64.000000" x="0.000001" y="0.000001" rx="14.000000" fill="rgb(226,199,152)" />
+	<rect id="横线" width="50.000000" height="1.500000" x="7.000001" y="17.000000" fill="rgb(176,144,96)" />
+	<rect id="纵线" width="1.500000" height="50.000000" x="17.000000" y="7.000001" fill="rgb(176,144,96)" />
+	<rect id="横线" width="50.000000" height="1.500000" x="7.000001" y="32.000000" fill="rgb(176,144,96)" />
+	<rect id="纵线" width="1.500000" height="50.000000" x="32.000000" y="7.000001" fill="rgb(176,144,96)" />
+	<rect id="横线" width="50.000000" height="1.500000" x="7.000001" y="47.000000" fill="rgb(176,144,96)" />
+	<rect id="纵线" width="1.500000" height="50.000000" x="47.000000" y="7.000001" fill="rgb(176,144,96)" />
+	<circle id="黑子" cx="17.5" cy="17.5" r="10.5" fill="rgb(41,59,52)" />
+	<circle id="白子轮廓" cx="45.5" cy="45.5" r="11.5" fill="rgb(177,154,118)" />
+	<circle id="白子" cx="45.5" cy="45.5" r="9.5" fill="rgb(255,252,243)" />
+	<circle id="黑子高光" cx="14.500001" cy="13.500001" r="3.5" fill="rgb(89,102,90)" />
+</svg>
