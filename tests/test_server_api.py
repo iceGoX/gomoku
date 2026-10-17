@@ -63,6 +63,79 @@ class ServerApiTests(unittest.TestCase):
         self.assertEqual(status, 201)
         return result
 
+    def test_emotes_authenticate_validate_and_preserve_room_state(self):
+        created = self.create_room()
+        code = created["room"]["code"]
+        path = f"/api/rooms/{code}/emote"
+        body = {"emoteId": "like", "requestId": "request-001"}
+        self.assertEqual(self.request(path, body)[0], 401)
+        for invalid in ("unknown", [], None):
+            self.assertEqual(self.request(path, {**body, "emoteId": invalid}, created)[0], 400)
+        for invalid in ("short", [], "<script>"):
+            self.assertEqual(self.request(path, {**body, "requestId": invalid}, created)[0], 400)
+        before = created["room"]
+        channel = queue.Queue(maxsize=32)
+        subscribers[code].append({"queue": channel, "closed": threading.Event()})
+        events = []
+        for index, emote_id in enumerate(("like", "angry")):
+            status, result = self.request(path, {"emoteId": emote_id, "requestId": f"request-{index}"}, created)
+            self.assertEqual(status, 200)
+            event_type, payload = channel.get_nowait()
+            self.assertEqual(event_type, "emote")
+            event = json.loads(payload)
+            self.assertEqual(event, result["emote"])
+            self.assertEqual(event["playerId"], created["playerId"])
+            self.assertEqual(event["color"], 1)
+            self.assertNotIn("token", payload.lower())
+            events.append(event["id"])
+        self.assertNotEqual(*events)
+        room = rooms[code]
+        for field in ("version", "updatedAt", "lastEvent", "game"):
+            self.assertEqual(room[field], before[field])
+
+    def test_emote_color_is_authoritative_after_seat_swap(self):
+        created = self.create_room()
+        code = created["room"]["code"]
+        _, joined = self.request(f"/api/rooms/{code}/join", {"name": "白方"})
+        self.request(f"/api/rooms/{code}/swap", {}, created)
+        self.request(f"/api/rooms/{code}/swap", {"action": "accept"}, joined)
+        # A client cannot impersonate the other stone color.
+        for session, expected_color in ((created, 2), (joined, 1)):
+            status, result = self.request(f"/api/rooms/{code}/emote", {
+                "emoteId": "like", "requestId": "swapped-color", "color": 3 - expected_color,
+            }, session)
+            self.assertEqual(status, 200)
+            self.assertEqual(result["emote"]["color"], expected_color)
+
+    def test_emote_duplicate_request_does_not_replay_and_rate_limit_allows_bursts(self):
+        created = self.create_room()
+        code = created["room"]["code"]
+        path = f"/api/rooms/{code}/emote"
+        channel = queue.Queue(maxsize=32)
+        subscribers[code].append({"queue": channel, "closed": threading.Event()})
+        body = {"emoteId": "cry", "requestId": "request-001"}
+        first = self.request(path, body, created)
+        self.assertEqual(first, self.request(path, body, created))
+        self.assertEqual(channel.qsize(), 1)
+        for index in range(1, 8):
+            self.assertEqual(self.request(path, {**body, "requestId": f"burst-00{index}"}, created)[0], 200)
+        status, result = self.request(path, {**body, "requestId": "burst-over"}, created)
+        self.assertEqual(status, 429)
+        self.assertEqual(result["error"], "EMOTE_RATE_LIMITED")
+        self.assertEqual(channel.qsize(), 8)
+
+    def test_emote_never_evicts_room_snapshot_and_is_not_in_reconnect_snapshot(self):
+        created = self.create_room()
+        code = created["room"]["code"]
+        channel = queue.Queue(maxsize=1)
+        channel.put_nowait("authoritative snapshot")
+        subscribers[code].append({"queue": channel, "closed": threading.Event()})
+        self.assertEqual(self.request(f"/api/rooms/{code}/emote", {"emoteId": "like", "requestId": "request-001"}, created)[0], 200)
+        self.assertEqual(channel.get_nowait(), "authoritative snapshot")
+        from server.app import public_room
+        self.assertNotIn("recentEmotes", json.dumps(public_room(rooms[code])))
+        self.assertNotIn("request-001", json.dumps(public_room(rooms[code])))
+
     def test_full_room_rejects_third_player(self):
         created = self.create_room()
         code = created["room"]["code"]

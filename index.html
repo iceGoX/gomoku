@@ -6,7 +6,7 @@
     <meta name="theme-color" content="#fcf8ef" />
     <meta name="description" content="支持在线房间、离线双人、普通模式与连珠专业规则的网页五子棋" />
     <title>弈五 · 在线五子棋</title>
-    <link rel="stylesheet" href="styles.css?v=6c55d3f" />
+    <link rel="stylesheet" href="styles.css?v=f8e99a0c035c" />
   <link rel="icon" type="image/png" sizes="32x32" href="assets/icons/favicon-32-v1.png">
 <link rel="icon" type="image/svg+xml" sizes="any" href="assets/icons/favicon-v1.svg">
 <link rel="apple-touch-icon" sizes="180x180" href="assets/icons/apple-touch-icon-v1.png">
@@ -197,6 +197,18 @@
         <div><button class="quiet-button" value="cancel">继续对局</button><button class="primary-button danger-fill" id="confirmResignButton" value="confirm">确认认输</button></div>
       </form>
     </dialog>
-    <script type="module" src="game.js?v=6c55d3f"></script>
+    <div class="emote-picker hidden" id="emotePicker" role="group" aria-label="选择表情">
+      <p>打个招呼，落子有趣</p>
+      <div class="emote-options">
+        <button type="button" data-emote-id="like" aria-label="发送点赞"><img src="assets/emotes/like.png" alt="" width="56" height="56"><span>点赞</span></button>
+        <button type="button" data-emote-id="angry" aria-label="发送生气"><img src="assets/emotes/angry.png" alt="" width="56" height="56"><span>生气</span></button>
+        <button type="button" data-emote-id="laugh" aria-label="发送大笑"><img src="assets/emotes/laugh.png" alt="" width="56" height="56"><span>大笑</span></button>
+        <button type="button" data-emote-id="cry" aria-label="发送哭哭"><img src="assets/emotes/cry.png" alt="" width="56" height="56"><span>哭哭</span></button>
+      </div>
+      <small>点选即发送 · 连发有惊喜</small>
+    </div>
+    <div class="emote-layer" id="emoteLayer" aria-hidden="true"></div>
+    <p class="emote-feedback" id="emoteFeedback" role="status" aria-live="polite"></p>
+    <script type="module" src="game.js?v=e7c6d43d0f09"></script>
   </body>
 </html>

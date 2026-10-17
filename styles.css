@@ -458,3 +458,36 @@ dialog::backdrop { background: #273b344d; backdrop-filter: blur(3px); }
 @media (min-width: 901px) {
   .board-wrap { width: min(100%, max(360px, calc(100svh - 210px))); }
 }
+
+/* Avatar emotes stay outside board input and survive room rerenders. */
+.player-avatar { position: relative; flex: 0 0 44px; display: inline-flex; align-items: center; justify-content: center; width: 44px; height: 44px; padding: 0; border: 1px solid var(--line); border-radius: 50%; background: var(--paper); }
+button.player-avatar { cursor: pointer; transition: background 150ms, transform 150ms; }
+button.player-avatar:hover, button.player-avatar[aria-expanded="true"] { background: var(--green-soft); border-color: var(--green); }
+button.player-avatar:active { transform: scale(.93); }
+.player-avatar .seat-stone { width: 25px; height: 25px; }
+.avatar-emote-hint { position: absolute; right: -3px; bottom: -2px; display: grid; place-items: center; width: 19px; height: 19px; border: 1px solid var(--line); border-radius: 50%; background: var(--paper); color: var(--green); font-size: 15px; line-height: 1; }
+.emote-picker { position: fixed; z-index: 40; width: min(300px, calc(100vw - 24px)); padding: 14px 10px 10px; border: 1px solid var(--line); border-radius: 18px; background: var(--paper); box-shadow: 0 12px 40px #293b3426; }
+.emote-picker p { margin: 0 6px 8px; font-size: 13px; font-weight: 600; }
+.emote-picker > small { display: block; margin-top: 9px; color: var(--muted); font-size: 11px; text-align: center; }
+.emote-options { display: grid; grid-template-columns: repeat(4, 1fr); gap: 3px; }
+.emote-options button { display: grid; justify-items: center; gap: 4px; min-width: 44px; min-height: 76px; padding: 5px 0; border: 0; border-radius: 12px; background: transparent; cursor: pointer; font-size: 12px; }
+.emote-options button:hover { background: var(--green-soft); }
+.emote-options img { width: 56px; height: 56px; object-fit: contain; }
+.player-avatar:focus-visible, .emote-options button:focus-visible { outline: 3px solid var(--green); outline-offset: 3px; }
+.emote-layer { position: fixed; inset: 0; z-index: 35; pointer-events: none; }
+.emote-burst { position: absolute; width: 104px; height: 104px; margin-left: -52px; margin-top: -72px; animation: emote-pop 2400ms both; transform-origin: 50% 90%; }
+.emote-burst img { width: 100%; height: 100%; object-fit: contain; filter: drop-shadow(0 4px 3px #293b3420); }
+.emote-feedback { position: fixed; z-index: 41; left: 50%; bottom: max(16px, env(safe-area-inset-bottom)); transform: translateX(-50%); max-width: calc(100vw - 32px); margin: 0; padding: 9px 16px; border-radius: 14px; background: var(--ink); color: var(--paper); font-size: 13px; pointer-events: none; }
+.emote-feedback:empty { display: none; }
+@keyframes emote-pop {
+  0% { opacity: 0; transform: translateY(15px) scale(.35) rotate(-12deg); }
+  14% { opacity: 1; transform: translateY(-7px) scale(1.12) rotate(6deg); }
+  25%, 65% { opacity: 1; transform: translateY(-3px) scale(1) rotate(-3deg); }
+  80% { opacity: 1; transform: translateY(-15px) scale(1.03) rotate(3deg); }
+  100% { opacity: 0; transform: translateY(-42px) scale(.85); }
+}
+@keyframes emote-notice { 0%, 80% { opacity: 1; } 100% { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) {
+  .emote-burst { animation: emote-notice 2400ms both; }
+  button.player-avatar { transition: none; }
+}

@@ -11,7 +11,7 @@ function element(fragment = false) {
   const attributes = new Map();
   const listeners = new Map();
   return {
-    fragment, dataset: {}, children: [], className: "", textContent: "", innerHTML: "",
+    style: {}, fragment, dataset: {}, children: [], className: "", textContent: "", innerHTML: "",
     disabled: false, open: false,
     classList: {
       add: (...names) => names.forEach((name) => classes.add(name)),
@@ -31,6 +31,8 @@ function element(fragment = false) {
       }
     },
     remove() { this.parent.children = this.parent.children.filter((child) => child !== this); },
+    querySelector() { return this.children[0] || null; },
+    getBoundingClientRect() { return { left: 100, top: 220, right: 144, bottom: 264, width: 44, height: 44 }; },
     querySelectorAll(selector) {
       return this.children.filter((child) => child.className.split(" ").includes(selector.slice(1)));
     },
@@ -46,9 +48,15 @@ function element(fragment = false) {
 
 function loadGame({ playerId = "black", moves = [[7, 7]], local = false } = {}) {
   const nodes = new Map();
+  const timers = new Map();
+  let timerId = 0;
   const context = createContext({
     URL,
-    window: { location: { href: "http://gomoku.test/" }, addEventListener() {} },
+    window: {
+      location: { href: "http://gomoku.test/" }, addEventListener() {}, innerWidth: 1000, innerHeight: 800,
+      setTimeout(callback) { timers.set(++timerId, callback); return timerId; },
+      clearTimeout(id) { timers.delete(id); },
+    },
     sessionStorage: { getItem: () => null, setItem() {}, removeItem() {} },
     document: {
       body: element(),
@@ -63,6 +71,7 @@ function loadGame({ playerId = "black", moves = [[7, 7]], local = false } = {}) 
     fetch: async () => { throw new Error("Unexpected network request"); },
   });
   runInContext(`${source}\nglobalThis.app = {
+    emoteState, emoteAvatar, emoteImage, positionEmotes, toggleEmotePicker, sendEmote, receiveEmote, resetEmotes,
     state, elements, createLocalGame, placeLocal, startOffline, canAct, undoActionState,
     renderUndoAction, renderGame, renderStatus, requestUndo, respondToUndo, applyRoomUpdate, setStatus,
     renderRoom, viewFinishedBoard, showFinishedResult, rematch, handleIntersection,
@@ -85,6 +94,7 @@ function loadGame({ playerId = "black", moves = [[7, 7]], local = false } = {}) 
       rematchVotes: [], seatSwapRequestPlayerId: null, game,
     };
   }
+  app.timers = timers;
   app.setFetch = (fetch) => { context.fetch = fetch; };
   return app;
 }
@@ -470,4 +480,142 @@ test("white wins, resignations and draws all support viewing and returning", () 
     assert.equal(app.elements.resultTitle.textContent, title);
     assert.equal(app.elements.resultDialog.open, true);
   }
+});
+
+function prepareEmotes(options) {
+  const app = loadGame(options);
+  const local = app.state.transport === "offline";
+  const anchors = ["black", "white"].map((id, index) => {
+    const anchor = element();
+    anchor.dataset.emotePlayer = local ? `local-${index + 1}` : id;
+    return anchor;
+  });
+  app.elements.playerStrip.querySelectorAll = () => anchors;
+  const choices = ["like", "angry", "laugh", "cry"].map((id) => {
+    const button = element();
+    button.dataset.emoteId = id;
+    button.append(element());
+    return button;
+  });
+  app.elements.emotePicker.children = choices;
+  app.elements.emotePicker.querySelectorAll = () => choices;
+  return app;
+}
+
+test("only the local player's avatar offers sending; both offline seats can send", () => {
+  const app = prepareEmotes();
+  assert.match(app.emoteAvatar(app.state.room.players[0]), /<button/);
+  assert.doesNotMatch(app.emoteAvatar(app.state.room.players[1]), /<button/);
+  app.toggleEmotePicker("white");
+  assert.equal(app.emoteState.playerId, null);
+  app.toggleEmotePicker("black");
+  assert.equal(app.emoteState.playerId, "black");
+  assert.equal(app.elements.emotePicker.children[0].focused, true);
+  const local = prepareEmotes({ local: true });
+  for (const id of ["local-1", "local-2"]) {
+    local.toggleEmotePicker(id);
+    assert.equal(local.emoteState.playerId, id);
+  }
+});
+
+test("burst sends close the picker, coexist across rerenders and expire independently", async () => {
+  const app = prepareEmotes({ local: true });
+  const turn = app.state.localGame.turn;
+  for (const emote of ["like", "angry"]) {
+    app.toggleEmotePicker("local-1");
+    await app.sendEmote(emote);
+    assert.equal(app.emoteState.playerId, null);
+    assert.equal(app.elements.emotePicker.classList.contains("hidden"), true);
+  }
+  assert.equal(app.emoteState.active.length, 2);
+  assert.notEqual(app.emoteState.active[0].slot, app.emoteState.active[1].slot);
+  assert.equal(app.elements.emoteLayer.children.length, 2);
+  app.renderGame();
+  assert.equal(app.emoteState.active.length, 2);
+  assert.equal(app.state.localGame.turn, turn);
+  assert.equal(app.canAct(), true);
+  app.timers.get(app.emoteState.active[0].timer)();
+  assert.equal(app.emoteState.active.length, 1);
+  assert.match(app.emoteState.active[0].node.innerHTML, /angry.png/);
+  app.resetEmotes();
+  assert.equal(app.emoteState.active.length, 0);
+  assert.equal(app.timers.size, 0);
+});
+
+test("online optimistic send is echoed once without changing room or preview", async () => {
+  const app = prepareEmotes();
+  let sent;
+  const room = JSON.stringify(app.state.room);
+  app.state.preview = { row: 8, col: 8 };
+  app.setFetch(async (url, options) => {
+    assert.match(url, /rooms\/ABC234\/emote$/);
+    assert.equal(options.headers["X-Player-Token"], "test-token");
+    sent = JSON.parse(options.body);
+    return { ok: true, json: async () => ({}) };
+  });
+  app.toggleEmotePicker("black");
+  await app.sendEmote("laugh");
+  app.receiveEmote({ id: `black:${sent.requestId}`, roomCode: "ABC234", playerId: "black", emoteId: "laugh" });
+  assert.equal(app.emoteState.active.length, 1);
+  assert.equal(JSON.stringify(app.state.room), room);
+  assert.equal(app.state.preview.row, 8);
+  for (const change of [{ roomCode: "OTHER2" }, { playerId: "stranger" }, { emoteId: "invalid" }]) {
+    app.receiveEmote({ id: JSON.stringify(change), roomCode: "ABC234", playerId: "white", emoteId: "cry", ...change });
+  }
+  assert.equal(app.emoteState.active.length, 1);
+});
+
+test("pending network requests do not lock sending and failures provide retry feedback", async () => {
+  const app = prepareEmotes();
+  const requests = [];
+  app.setFetch(() => new Promise((resolve) => requests.push(resolve)));
+  app.toggleEmotePicker("black");
+  const first = app.sendEmote("like");
+  app.toggleEmotePicker("black");
+  const second = app.sendEmote("cry");
+  assert.equal(requests.length, 2);
+  assert.equal(app.emoteState.active.length, 2);
+  requests[0]({ ok: true, json: async () => ({}) });
+  requests[1]({ ok: false, json: async () => ({ message: "连接失败" }) });
+  await Promise.all([first, second]);
+  assert.match(app.elements.emoteFeedback.textContent, /未送达.*点击头像重试/);
+});
+
+test("long emote bursts have bounded visuals and never reuse an occupied slot", () => {
+  const app = prepareEmotes({ local: true });
+  for (let n = 0; n < 20; n += 1) {
+    app.receiveEmote({ id: `event-${n}`, playerId: "local-1", emoteId: "like" });
+  }
+  assert.equal(app.emoteState.active.length, 6);
+  assert.equal(new Set(app.emoteState.active.map((item) => item.slot)).size, 6);
+  assert.equal(app.timers.size, 7);
+});
+
+test("emote picker follows offline seat and online seat swaps while open", () => {
+  const local = prepareEmotes({ local: true });
+  for (const [playerId, prefix] of [["local-1", "black-"], ["local-2", ""]]) {
+    local.toggleEmotePicker(playerId);
+    for (const button of local.elements.emotePicker.children) {
+      assert.equal(button.children[0].src, `assets/emotes/${prefix}${button.dataset.emoteId}.png`);
+    }
+  }
+  const online = prepareEmotes();
+  online.toggleEmotePicker("black");
+  assert.match(online.elements.emotePicker.children[0].children[0].src, /black-like.png$/);
+  online.state.room.players[0].color = 2;
+  online.state.room.players[1].color = 1;
+  online.positionEmotes();
+  assert.equal(online.elements.emotePicker.children[0].children[0].src, "assets/emotes/like.png");
+});
+
+test("burst artwork captures the sender's stone color at send time", () => {
+  const app = prepareEmotes();
+  // The authoritative event carries the original color even after a seat swap.
+  app.state.room.players[0].color = 2;
+  app.receiveEmote({ id: "before-swap", roomCode: "ABC234", playerId: "black", emoteId: "like", color: 1 });
+  app.receiveEmote({ id: "after-swap", roomCode: "ABC234", playerId: "black", emoteId: "like", color: 2 });
+  assert.match(app.emoteState.active[0].node.innerHTML, /black-like.png/);
+  assert.match(app.emoteState.active[1].node.innerHTML, /src="assets\/emotes\/like.png"/);
+  app.renderGame();
+  assert.match(app.emoteState.active[0].node.innerHTML, /black-like.png/);
 });

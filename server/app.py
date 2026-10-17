@@ -31,6 +31,7 @@ FINISHED_ROOM_TTL_SECONDS = 3600
 MAX_ACTIVE_ROOMS = 1000
 MAX_ACTIVE_ROOMS_PER_IP = 20
 STREAM_CLOSED = object()
+EMOTE_IDS = {"like", "angry", "laugh", "cry"}
 STATIC_FILES = {
     "/assets/icons/favicon-32-v1.png": ROOT / "assets/icons/favicon-32-v1.png",
     "/assets/icons/apple-touch-icon-v1.png": ROOT / "assets/icons/apple-touch-icon-v1.png",
@@ -42,6 +43,10 @@ STATIC_FILES = {
     "/assets/design/gomoku-hero.jpg": ROOT / "assets/design/gomoku-hero.jpg",
     "/assets/design/maple-board.jpg": ROOT / "assets/design/maple-board.jpg",
 }
+
+for emote_id in EMOTE_IDS:
+    for prefix in ("", "black-"):
+        STATIC_FILES[f"/assets/emotes/{prefix}{emote_id}.png"] = ROOT / f"assets/emotes/{prefix}{emote_id}.png"
 
 rooms: dict[str, dict] = {}
 subscribers: dict[str, list[dict]] = defaultdict(list)
@@ -322,7 +327,7 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/api/rooms":
                 self.create_room(data)
                 return
-            route = re.fullmatch(r"/api/rooms/([A-Z2-9]{6})/(join|start|place|resign|rematch|swap|undo|leave)", path)
+            route = re.fullmatch(r"/api/rooms/([A-Z2-9]{6})/(join|start|place|resign|rematch|swap|undo|leave|emote)", path)
             if route:
                 action = route.group(2)
                 getattr(self, f"room_{action}")(route.group(1), data)
@@ -334,6 +339,44 @@ class Handler(BaseHTTPRequestHandler):
             return
         except Exception:
             self.send_json(HTTPStatus.INTERNAL_SERVER_ERROR, {"error": "SERVER_ERROR", "message": "服务器暂时无法处理请求。"})
+
+    def room_emote(self, code: str, data: dict) -> None:
+        with rooms_lock:
+            room, player = self.authenticated_room(code)
+            if not room or not player:
+                return
+            emote_id = data.get("emoteId")
+            request_id = data.get("requestId")
+            if not isinstance(emote_id, str) or emote_id not in EMOTE_IDS:
+                raise ValueError("请选择有效的表情。")
+            if not isinstance(request_id, str) or not re.fullmatch(r"[A-Za-z0-9_-]{8,80}", request_id):
+                raise ValueError("表情请求标识无效。")
+            recent = player.setdefault("recentEmotes", deque(maxlen=64))
+            previous = next((event for event in recent if event["requestId"] == request_id), None)
+            if previous:
+                self.send_json(HTTPStatus.OK, {"emote": previous})
+                return
+            current = time.monotonic()
+            sent = player.setdefault("emoteTimes", deque())
+            while sent and current - sent[0] >= 1:
+                sent.popleft()
+            if len(sent) >= 8:
+                self.send_json(HTTPStatus.TOO_MANY_REQUESTS, {"error": "EMOTE_RATE_LIMITED", "message": "表情发送太快了，稍等一下再发。"})
+                return
+            sent.append(current)
+            event = {"id": f"{player['id']}:{request_id}", "requestId": request_id,
+                     "roomCode": code, "playerId": player["id"], "emoteId": emote_id, "color": player["color"]}
+            recent.append(event)
+            payload = json.dumps(event, ensure_ascii=False, separators=(",", ":"))
+            for target in subscribers.get(code, []):
+                if target["closed"].is_set():
+                    continue
+                try:
+                    target["queue"].put_nowait(("emote", payload))
+                except queue.Full:
+                    # Cosmetic events must never evict an authoritative room update.
+                    pass
+        self.send_json(HTTPStatus.OK, {"emote": event})
 
     def create_room(self, data: dict) -> None:
         name = str(data.get("name", "")).strip()
@@ -646,7 +689,7 @@ class Handler(BaseHTTPRequestHandler):
             if not room or not player:
                 self.send_json(HTTPStatus.UNAUTHORIZED, {"error": "UNAUTHORIZED", "message": "玩家身份无效。"})
                 return
-            channel: queue.Queue = queue.Queue(maxsize=4)
+            channel: queue.Queue = queue.Queue(maxsize=32)
             target = {"playerId": player["id"], "queue": channel, "closed": threading.Event()}
             subscribers[code].append(target)
             player["connections"] += 1
@@ -665,7 +708,10 @@ class Handler(BaseHTTPRequestHandler):
                     payload = channel.get(timeout=20)
                     if payload is STREAM_CLOSED or target["closed"].is_set():
                         break
-                    self.wfile.write(f"event: room\ndata: {payload}\n\n".encode("utf-8"))
+                    event_type = "room"
+                    if isinstance(payload, tuple):
+                        event_type, payload = payload
+                    self.wfile.write(f"event: {event_type}\ndata: {payload}\n\n".encode("utf-8"))
                 except queue.Empty:
                     self.wfile.write(b": keepalive\n\n")
                 self.wfile.flush()

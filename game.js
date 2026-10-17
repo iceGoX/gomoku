@@ -6,10 +6,15 @@ const DIRECTIONS = [[1, 0], [0, 1], [1, 1], [1, -1]];
 const MAX_FORBIDDEN_DEPTH = 2;
 const MAX_UNDO_USES = 2;
 const COLUMNS = ["A", "B", "C", "D", "E", "F", "G", "H", "J", "K", "L", "M", "N", "O", "P"];
+const EMOTES = { like: "点赞", angry: "生气", laugh: "大笑", cry: "哭哭" };
+const emoteState = { playerId: null, active: [], seen: new Set(), sequence: 0, feedbackTimer: null };
 const SESSION_KEY = "gomoku-room-session";
 const APP_BASE = new URL("./", window.location.href);
 
 const elements = {
+  emotePicker: document.querySelector("#emotePicker"),
+  emoteLayer: document.querySelector("#emoteLayer"),
+  emoteFeedback: document.querySelector("#emoteFeedback"),
   lobbyScreen: document.querySelector("#lobbyScreen"),
   waitingScreen: document.querySelector("#waitingScreen"),
   gameScreen: document.querySelector("#gameScreen"),
@@ -444,6 +449,7 @@ function clearStatusOverride() {
 }
 
 function showScreen(name) {
+  if (document.body.dataset.screen !== name) resetEmotes();
   document.body.dataset.screen = name;
   elements.lobbyScreen.classList.toggle("hidden", name !== "lobby");
   elements.waitingScreen.classList.toggle("hidden", name !== "waiting");
@@ -504,6 +510,155 @@ function renderBoard() {
   }
 }
 
+function emotePlayerColor(playerId) {
+  if (state.transport === "offline") return playerId === "local-1" ? BLACK : WHITE;
+  return state.room?.players.find((player) => player.id === playerId)?.color || WHITE;
+}
+
+function emoteImage(emoteId, color) {
+  return `assets/emotes/${color === BLACK ? "black-" : ""}${emoteId}.png`;
+}
+
+function renderEmotePicker() {
+  const color = emotePlayerColor(emoteState.playerId);
+  for (const button of elements.emotePicker.querySelectorAll("[data-emote-id]")) {
+    const image = button.querySelector("img");
+    const source = emoteImage(button.dataset.emoteId, color);
+    if (image.getAttribute("src") !== source) image.src = source;
+  }
+}
+
+function emoteAvatar(player) {
+  const id = state.transport === "offline" ? `local-${player.color}` : player.id;
+  const own = state.transport === "offline" || id === state.session?.playerId;
+  const attributes = `class="player-avatar" data-emote-player="${escapeHtml(id)}"`;
+  const stone = `<span class="seat-stone ${colorClass(player.color)}" aria-hidden="true"></span>`;
+  return own
+    ? `<button type="button" ${attributes} aria-label="${escapeHtml(player.name)}，发送表情" aria-expanded="${emoteState.playerId === id}" aria-controls="emotePicker" title="点击发送表情">${stone}<span class="avatar-emote-hint" aria-hidden="true">☺</span></button>`
+    : `<span ${attributes}>${stone}</span>`;
+}
+
+function emoteAnchor(playerId) {
+  const screen = document.body.dataset.screen === "waiting" ? elements.seatList : elements.playerStrip;
+  return [...screen.querySelectorAll("[data-emote-player]")].find((node) => node.dataset.emotePlayer === playerId);
+}
+
+function closeEmotePicker(restoreFocus = false) {
+  const anchor = emoteAnchor(emoteState.playerId);
+  emoteState.playerId = null;
+  elements.emotePicker.classList.add("hidden");
+  anchor?.setAttribute("aria-expanded", "false");
+  if (restoreFocus) anchor?.focus();
+}
+
+function positionEmotes() {
+  const viewportWidth = document.documentElement?.clientWidth || window.innerWidth;
+  if (emoteState.playerId) {
+    renderEmotePicker();
+    const anchor = emoteAnchor(emoteState.playerId);
+    if (!anchor) closeEmotePicker();
+    else {
+      anchor.setAttribute("aria-expanded", "true");
+      const rect = anchor.getBoundingClientRect();
+      const panel = elements.emotePicker.getBoundingClientRect();
+      const left = Math.max(12, Math.min(rect.left, viewportWidth - panel.width - 12));
+      const top = rect.top >= panel.height + 16 ? rect.top - panel.height - 10 : rect.bottom + 10;
+      elements.emotePicker.style.left = `${left}px`;
+      elements.emotePicker.style.top = `${Math.max(12, Math.min(top, window.innerHeight - panel.height - 12))}px`;
+    }
+  }
+  for (const item of emoteState.active) {
+    const anchor = emoteAnchor(item.playerId);
+    if (!anchor) continue;
+    const rect = anchor.getBoundingClientRect();
+    // Each burst owns a slot and a timer; later sends never replace an earlier one.
+    const direction = rect.left + 22 < viewportWidth / 2 ? 1 : -1;
+    const x = Math.max(52, Math.min(rect.left + 26 + direction * item.slot * 48, viewportWidth - 52));
+    const y = Math.max(112, rect.top - 12 - item.slot * 10);
+    item.node.style.left = `${x}px`;
+    item.node.style.top = `${y}px`;
+  }
+}
+
+function toggleEmotePicker(playerId) {
+  const own = state.transport === "offline"
+    ? ["local-1", "local-2"].includes(playerId)
+    : state.transport === "online" && state.session?.playerId === playerId;
+  if (!own) return;
+  if (emoteState.playerId === playerId) { closeEmotePicker(true); return; }
+  closeEmotePicker();
+  emoteState.playerId = playerId;
+  elements.emotePicker.classList.remove("hidden");
+  positionEmotes();
+  elements.emotePicker.querySelector("button")?.focus();
+}
+
+function removeEmote(item) {
+  window.clearTimeout(item.timer);
+  item.node.remove();
+  emoteState.active = emoteState.active.filter((entry) => entry !== item);
+}
+
+function showEmoteFeedback(message) {
+  window.clearTimeout(emoteState.feedbackTimer);
+  elements.emoteFeedback.textContent = message;
+  emoteState.feedbackTimer = window.setTimeout(() => { elements.emoteFeedback.textContent = ""; }, 3500);
+}
+
+function resetEmotes() {
+  closeEmotePicker();
+  for (const item of [...emoteState.active]) removeEmote(item);
+  emoteState.seen.clear();
+  window.clearTimeout(emoteState.feedbackTimer);
+  elements.emoteFeedback.textContent = "";
+}
+
+function receiveEmote(event) {
+  if (!Object.hasOwn(EMOTES, event.emoteId) || typeof event.id !== "string" || emoteState.seen.has(event.id)) return;
+  if (state.transport === "online" && (event.roomCode !== state.room?.code
+    || !state.room.players.some((player) => player.id === event.playerId))) return;
+  if (state.transport !== "offline" && state.transport !== "online") return;
+  if (!emoteAnchor(event.playerId)) return;
+  emoteState.seen.add(event.id);
+  if (emoteState.seen.size > 128) emoteState.seen.delete(emoteState.seen.values().next().value);
+  const samePlayer = emoteState.active.filter((item) => item.playerId === event.playerId);
+  if (samePlayer.length >= 6) removeEmote(samePlayer.shift());
+  const used = new Set(samePlayer.map((item) => item.slot));
+  let slot = 0;
+  while (used.has(slot)) slot += 1;
+  const node = document.createElement("div");
+  node.className = "emote-burst";
+  const color = event.color === BLACK || event.color === WHITE ? event.color : emotePlayerColor(event.playerId);
+  node.innerHTML = `<img src="${emoteImage(event.emoteId, color)}" alt="${EMOTES[event.emoteId]}" width="104" height="104">`;
+  const item = { node, playerId: event.playerId, slot, timer: null };
+  elements.emoteLayer.append(node);
+  emoteState.active.push(item);
+  positionEmotes();
+  item.timer = window.setTimeout(() => removeEmote(item), 2400);
+  const player = state.room?.players.find((entry) => entry.id === event.playerId);
+  showEmoteFeedback(`${player?.name || (event.playerId === "local-1" ? "黑方" : "白方")}发送了${EMOTES[event.emoteId]}`);
+}
+
+async function sendEmote(emoteId) {
+  const playerId = emoteState.playerId;
+  if (!playerId || !Object.hasOwn(EMOTES, emoteId)) return;
+  const own = state.transport === "offline" || state.session?.playerId === playerId;
+  if (!own) return;
+  closeEmotePicker(true);
+  const requestId = `${Date.now().toString(36)}-${++emoteState.sequence}`;
+  const roomCode = state.room?.code;
+  const session = state.session;
+  receiveEmote({ id: `${playerId}:${requestId}`, playerId, roomCode, emoteId, color: emotePlayerColor(playerId) });
+  if (state.transport === "offline") return;
+  try {
+    await apiRequest(`rooms/${roomCode}/emote`, { body: JSON.stringify({ emoteId, requestId }) });
+  } catch (error) {
+    if (state.transport === "online" && state.session === session) {
+      showEmoteFeedback(`表情未送达：${error.message} 请点击头像重试。`);
+    }
+  }
+}
+
 function renderPlayers() {
   const game = currentGame();
   if (!game) return;
@@ -521,8 +676,9 @@ function renderPlayers() {
     const status = state.transport === "offline"
       ? game.status === "finished" ? "本局结束" : active ? "当前回合" : "等待回合"
       : `${player.connected ? "在线" : "离线"}${active ? " · 当前回合" : ""}`;
-    return `<div class="player-card${active ? " active" : ""}"><span class="seat-stone ${colorClass(player.color)}"></span><span><strong>${escapeHtml(player.name)}</strong><small>${status}</small></span></div>`;
+    return `<div class="player-card${active ? " active" : ""}">${emoteAvatar(player)}<span><strong>${escapeHtml(player.name)}</strong><small>${status}</small></span></div>`;
   }).join("");
+  positionEmotes();
 }
 
 function renderTurn() {
@@ -715,8 +871,9 @@ function renderWaiting() {
   elements.seatList.innerHTML = colors.map((color) => {
     const player = state.room.players.find((item) => item.color === color);
     if (!player) return `<div class="seat empty"><span class="seat-stone ${colorClass(color)}"></span><span><strong>等待${colorLabel(color)}加入</strong><small>空位</small></span></div>`;
-    return `<div class="seat"><span class="seat-stone ${colorClass(color)}"></span><span><strong>${escapeHtml(player.name)}</strong><small>${player.isHost ? "房主" : "已入席"}${player.connected ? " · 在线" : ""}</small></span></div>`;
+    return `<div class="seat">${emoteAvatar(player)}<span><strong>${escapeHtml(player.name)}</strong><small>${player.isHost ? "房主" : "已入席"}${player.connected ? " · 在线" : ""}</small></span></div>`;
   }).join("");
+  positionEmotes();
   const me = currentPlayer();
   const ready = state.room.players.length === 2;
   elements.startButton.disabled = !me?.isHost || !ready;
@@ -1046,8 +1203,10 @@ async function startEventLoop() {
         for (const event of events) {
           const dataLine = event.split("\n").find((line) => line.startsWith("data: "));
           if (!dataLine) continue;
-          const room = JSON.parse(dataLine.slice(6));
-          if (applyRoomUpdate(room)) renderRoom();
+          const payload = JSON.parse(dataLine.slice(6));
+          if (loopId !== state.eventLoopId || controller.signal.aborted) return;
+          if (event.split("\n").includes("event: emote")) receiveEmote(payload);
+          else if (applyRoomUpdate(payload)) renderRoom();
         }
       }
     } catch (error) {
@@ -1194,6 +1353,22 @@ function escapeHtml(value) {
 }
 
 function bindEvents() {
+  for (const container of [elements.playerStrip, elements.seatList]) {
+    container.addEventListener("click", (event) => {
+      const avatar = event.target.closest("button[data-emote-player]");
+      if (avatar) toggleEmotePicker(avatar.dataset.emotePlayer);
+    });
+  }
+  elements.emotePicker.addEventListener("click", (event) => {
+    const button = event.target.closest("button[data-emote-id]");
+    if (button) sendEmote(button.dataset.emoteId);
+  });
+  window.addEventListener("pointerdown", (event) => {
+    if (emoteState.playerId && !elements.emotePicker.contains(event.target)
+      && !event.target.closest("button[data-emote-player]")) closeEmotePicker();
+  });
+  window.addEventListener("resize", positionEmotes);
+  window.addEventListener("scroll", positionEmotes, true);
   document.querySelectorAll('input[name="gameMode"]').forEach((input) => input.addEventListener("change", () => {
     elements.modeBadge.textContent = selectedMode() === "professional" ? "专业" : "普通";
   }));
@@ -1238,7 +1413,18 @@ function bindEvents() {
   elements.rejectUndoButton.addEventListener("click", () => respondToUndo("reject"));
   [elements.seatSwapDialog, elements.undoRequestDialog].forEach((dialog) => dialog.addEventListener("cancel", (event) => event.preventDefault()));
   window.addEventListener("keydown", (event) => {
-    if (event.key === "?" && !elements.rulesDialog.open) elements.rulesDialog.showModal();
+    if (emoteState.playerId) {
+      if (event.key === "Escape") { event.preventDefault(); closeEmotePicker(true); return; }
+      if (event.key === "Enter" || event.key === " ") return;
+      if (event.key === "Tab") {
+        // Close after focus has left the nonmodal picker.
+        window.setTimeout(() => {
+          if (!elements.emotePicker.contains(document.activeElement)) closeEmotePicker();
+        }, 0);
+      }
+    }
+    if (event.key === "?" && !elements.rulesDialog.open) { closeEmotePicker(); elements.rulesDialog.showModal(); }
+    if (event.target?.closest?.("button, input, textarea, select, summary")) return;
     if (event.key === "Escape" && state.preview && !elements.rulesDialog.open && !elements.confirmDialog.open && !elements.exitDialog.open) clearPreview();
     if (event.key === "Enter" && state.previewAnalysis?.legal && !elements.resultDialog.open) confirmMove();
   });

@@ -38,6 +38,8 @@ def install(source: Path, domain: str) -> None:
         source / "deployment" / "gomoku.service",
         source / "deployment" / "nginx-gomoku.conf",
     ]
+    required.extend(source / f"assets/emotes/{prefix}{name}.png"
+                    for prefix in ("", "black-") for name in ("like", "angry", "laugh", "cry"))
     missing = [str(path) for path in required if not path.is_file()]
     if missing:
         raise SystemExit(f"Missing release files: {', '.join(missing)}")
@@ -46,6 +48,9 @@ def install(source: Path, domain: str) -> None:
         copy_file(source / relative, APP_ROOT / relative)
     for relative in ("assets/icons/favicon-32-v1.png", "assets/icons/apple-touch-icon-v1.png", "assets/icons/favicon-v1.svg", "index.html", "styles.css", "game.js", "assets/design/gomoku-hero.jpg", "assets/design/maple-board.jpg"):
         copy_file(source / relative, WEB_ROOT / relative)
+    for prefix in ("", "black-"):
+        for name in ("like", "angry", "laugh", "cry"):
+            copy_file(source / f"assets/emotes/{prefix}{name}.png", WEB_ROOT / f"assets/emotes/{prefix}{name}.png")
     copy_file(source / "deployment" / "gomoku.service", SERVICE_FILE)
     copy_file(source / "deployment" / "nginx-gomoku.conf", NGINX_SNIPPET)
 
