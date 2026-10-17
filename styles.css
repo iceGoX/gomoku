@@ -465,7 +465,8 @@ button.player-avatar { cursor: pointer; transition: background 150ms, transform 
 button.player-avatar:hover, button.player-avatar[aria-expanded="true"] { background: var(--green-soft); border-color: var(--green); }
 button.player-avatar:active { transform: scale(.93); }
 .player-avatar .seat-stone { width: 25px; height: 25px; }
-.avatar-emote-hint { position: absolute; right: -3px; bottom: -2px; display: grid; place-items: center; width: 19px; height: 19px; border: 1px solid var(--line); border-radius: 50%; background: var(--paper); color: var(--green); font-size: 15px; line-height: 1; }
+.avatar-emote-hint { position: absolute; right: -3px; bottom: -2px; display: grid; place-items: center; width: 19px; height: 19px; border: 1px solid var(--line); border-radius: 50%; background: var(--paper); color: var(--green); pointer-events: none; }
+.avatar-emote-hint svg { display: block; width: 15px; height: 15px; }
 .emote-picker { position: fixed; z-index: 40; width: min(300px, calc(100vw - 24px)); padding: 14px 10px 10px; border: 1px solid var(--line); border-radius: 18px; background: var(--paper); box-shadow: 0 12px 40px #293b3426; }
 .emote-picker p { margin: 0 6px 8px; font-size: 13px; font-weight: 600; }
 .emote-picker > small { display: block; margin-top: 9px; color: var(--muted); font-size: 11px; text-align: center; }

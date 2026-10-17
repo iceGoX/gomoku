@@ -534,7 +534,7 @@ function emoteAvatar(player) {
   const attributes = `class="player-avatar" data-emote-player="${escapeHtml(id)}"`;
   const stone = `<span class="seat-stone ${colorClass(player.color)}" aria-hidden="true"></span>`;
   return own
-    ? `<button type="button" ${attributes} aria-label="${escapeHtml(player.name)}，发送表情" aria-expanded="${emoteState.playerId === id}" aria-controls="emotePicker" title="点击发送表情">${stone}<span class="avatar-emote-hint" aria-hidden="true">☺</span></button>`
+    ? `<button type="button" ${attributes} aria-label="${escapeHtml(player.name)}，发送表情" aria-expanded="${emoteState.playerId === id}" aria-controls="emotePicker" title="点击发送表情">${stone}<span class="avatar-emote-hint" aria-hidden="true"><svg viewBox="0 0 20 20" focusable="false" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><circle cx="10" cy="10" r="7.4"/><circle cx="7.2" cy="8.2" r="0.8" fill="currentColor" stroke="none"/><circle cx="12.8" cy="8.2" r="0.8" fill="currentColor" stroke="none"/><path d="M6.8 11.5c1.3 2.6 5.1 2.6 6.4 0"/></svg></span></button>`
     : `<span ${attributes}>${stone}</span>`;
 }
 
