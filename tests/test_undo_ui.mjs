@@ -9,12 +9,14 @@ const label = (remaining) => `请求悔棋（剩余 ${remaining} 次）`;
 function element(fragment = false) {
   const classes = new Set();
   const attributes = new Map();
+  const listeners = new Map();
   return {
     fragment, dataset: {}, children: [], className: "", textContent: "", innerHTML: "",
     disabled: false, open: false,
     classList: {
       add: (...names) => names.forEach((name) => classes.add(name)),
       remove: (...names) => names.forEach((name) => classes.delete(name)),
+      contains: (name) => classes.has(name),
       toggle(name, force = !classes.has(name)) {
         if (force) classes.add(name);
         else classes.delete(name);
@@ -34,7 +36,9 @@ function element(fragment = false) {
     },
     setAttribute(name, value) { attributes.set(name, value); },
     getAttribute(name) { return attributes.get(name); },
-    addEventListener() {},
+    addEventListener(name, handler) { listeners.set(name, handler); },
+    emit(name, event) { listeners.get(name)?.(event); },
+    focus() { this.focused = true; },
     showModal() { this.open = true; },
     close() { this.open = false; },
   };
@@ -61,6 +65,7 @@ function loadGame({ playerId = "black", moves = [[7, 7]], local = false } = {}) 
   runInContext(`${source}\nglobalThis.app = {
     state, elements, createLocalGame, placeLocal, startOffline, canAct, undoActionState,
     renderUndoAction, renderGame, renderStatus, requestUndo, respondToUndo, applyRoomUpdate, setStatus,
+    renderRoom, viewFinishedBoard, showFinishedResult, rematch, handleIntersection,
   };`, context);
   const app = context.app;
   const game = app.createLocalGame("normal");
@@ -294,4 +299,175 @@ test("offline approval spends the last mover's quota, rejection and cancellation
   assert.equal(app.state.localGame.undoRequest, null);
   app.startOffline("normal");
   expectButton(app, 2, true);
+});
+
+const winningMoves = [[7, 3], [8, 3], [7, 4], [8, 4], [7, 5], [8, 5], [7, 6], [8, 6], [7, 7]];
+
+function finishGame(app) {
+  app.state.room.status = "finished";
+  app.state.room.game.status = "finished";
+  app.state.room.game.winnerColor = 1;
+  app.state.room.game.resultReason = "FIVE_IN_A_ROW";
+  app.renderRoom();
+}
+
+test("finished offline board can be viewed and result reopened without changing the position", () => {
+  const app = loadGame({ local: true, moves: winningMoves });
+  app.state.preview = { row: 0, col: 0 };
+  app.state.previewAnalysis = { legal: true };
+  app.renderGame();
+  const position = JSON.stringify(app.state.localGame);
+  assert.equal(app.elements.resultDialog.open, true);
+  assert.equal(app.elements.finishedActions.classList.contains("hidden"), false);
+  assert.equal(app.elements.previewCard.classList.contains("hidden"), true);
+  assert.equal(app.elements.confirmButton.classList.contains("hidden"), true);
+  assert.equal(app.elements.matchActions.classList.contains("hidden"), true);
+  app.viewFinishedBoard();
+  assert.equal(app.elements.resultDialog.open, false);
+  assert.equal(app.elements.showResultButton.focused, true);
+  assert.equal(app.state.preview, null);
+  assert.equal(app.canAct(), false);
+  assert.equal(app.elements.board.children.every((button) => button.disabled), true);
+  app.handleIntersection(0, 0);
+  assert.equal(JSON.stringify(app.state.localGame), position);
+  assert.equal(app.state.preview, null);
+  app.renderGame();
+  assert.equal(app.elements.resultDialog.open, false);
+  app.showFinishedResult();
+  assert.equal(app.elements.resultDialog.open, true);
+  assert.equal(app.elements.resultTitle.textContent, "黑方获胜");
+});
+
+test("Escape on the result dialog follows the same view-board path", () => {
+  const app = loadGame({ local: true, moves: winningMoves });
+  app.renderGame();
+  let prevented = false;
+  app.elements.resultDialog.emit("cancel", { preventDefault() { prevented = true; } });
+  assert.equal(prevented, true);
+  assert.equal(app.state.viewingBoard, true);
+  assert.equal(app.elements.resultDialog.open, false);
+  app.renderGame();
+  assert.equal(app.elements.resultDialog.open, false);
+});
+
+test("online updates and rematch invitations stay non-modal while viewing the board", () => {
+  const app = loadGame({ moves: winningMoves });
+  finishGame(app);
+  app.viewFinishedBoard();
+  const invited = snapshot(app, null);
+  invited.rematchVotes = ["white"];
+  assert.equal(app.applyRoomUpdate(invited), true);
+  app.renderRoom();
+  assert.equal(app.elements.resultDialog.open, false);
+  assert.match(app.elements.finishedNotice.textContent, /对方邀请再来一局/);
+  assert.equal(app.state.viewingBoard, true);
+  app.showFinishedResult();
+  assert.equal(app.elements.resultDialog.open, true);
+  assert.equal(app.elements.rematchButton.textContent, "接受邀请，再来一局");
+  assert.equal(app.elements.rematchButton.disabled, false);
+});
+
+test("incoming seat swaps wait for an explicit return and still require consent", () => {
+  const app = loadGame({ moves: winningMoves });
+  finishGame(app);
+  app.viewFinishedBoard();
+  const requested = snapshot(app, null);
+  requested.seatSwapRequestPlayerId = "white";
+  app.applyRoomUpdate(requested);
+  app.renderRoom();
+  assert.equal(app.elements.resultDialog.open, false);
+  assert.equal(app.elements.seatSwapDialog.open, false);
+  assert.match(app.elements.finishedNotice.textContent, /对方请求交换先后手/);
+  app.showFinishedResult();
+  assert.equal(app.elements.seatSwapDialog.open, true);
+  assert.equal(app.elements.resultDialog.open, false);
+  assert.equal(app.state.room.game.status, "finished");
+  const rejected = snapshot(app, null);
+  rejected.seatSwapRequestPlayerId = null;
+  app.applyRoomUpdate(rejected);
+  app.renderRoom();
+  assert.equal(app.elements.seatSwapDialog.open, false);
+  assert.equal(app.elements.resultDialog.open, true);
+});
+
+test("restarting offline resets viewing state and the next finish shows its result", async () => {
+  const app = loadGame({ local: true, moves: winningMoves });
+  app.renderGame();
+  app.viewFinishedBoard();
+  await app.rematch();
+  assert.equal(app.state.viewingBoard, false);
+  assert.equal(app.elements.resultDialog.open, false);
+  assert.equal(app.state.localGame.status, "playing");
+  assert.equal(app.state.localGame.moveHistory.length, 0);
+  assert.equal(app.elements.finishedActions.classList.contains("hidden"), true);
+  assert.equal(app.elements.previewCard.classList.contains("hidden"), false);
+  assert.equal(app.elements.confirmButton.classList.contains("hidden"), false);
+  for (const [row, col] of winningMoves) app.placeLocal(row, col);
+  app.renderGame();
+  assert.equal(app.elements.resultDialog.open, true);
+});
+
+test("already-agreed online rematch starts normally and late responses cannot restore the old board", async () => {
+  const app = loadGame({ moves: winningMoves });
+  finishGame(app);
+  const voted = snapshot(app, null);
+  voted.rematchVotes = ["black"];
+  let resolve;
+  let calls = 0;
+  app.setFetch(() => {
+    calls += 1;
+    return new Promise((done) => { resolve = done; });
+  });
+  const request = app.rematch();
+  app.renderRoom();
+  assert.equal(app.elements.rematchButton.disabled, true);
+  await app.rematch();
+  assert.equal(calls, 1);
+  app.viewFinishedBoard();
+  const started = snapshot(app, null);
+  started.version += 1;
+  started.status = "playing";
+  started.game = app.createLocalGame("normal");
+  app.applyRoomUpdate(started);
+  app.renderRoom();
+  assert.equal(app.state.viewingBoard, false);
+  assert.equal(app.elements.resultDialog.open, false);
+  resolve(response(voted));
+  await request;
+  assert.equal(app.state.room.status, "playing");
+  assert.equal(app.state.room.version, started.version);
+  assert.equal(app.elements.resultDialog.open, false);
+});
+
+test("failed rematch can be retried and an invitation can be hidden while waiting", async () => {
+  const app = loadGame({ moves: winningMoves });
+  finishGame(app);
+  app.setFetch(async () => { throw new Error("连接失败，请重试"); });
+  await app.rematch();
+  assert.match(app.elements.resultMessage.textContent, /连接失败/);
+  assert.equal(app.elements.rematchButton.disabled, false);
+  const voted = snapshot(app, null);
+  voted.rematchVotes = ["black"];
+  app.setFetch(async () => response(voted));
+  await app.rematch();
+  app.viewFinishedBoard();
+  app.renderRoom();
+  assert.equal(app.elements.resultDialog.open, false);
+  assert.match(app.elements.finishedNotice.textContent, /已邀请再来一局/);
+  app.showFinishedResult();
+  assert.equal(app.elements.rematchButton.disabled, true);
+});
+
+test("white wins, resignations and draws all support viewing and returning", () => {
+  for (const [winnerColor, resultReason, title] of [[2, "FIVE_IN_A_ROW", "白方获胜"], [1, "RESIGN", "黑方获胜"], [null, "BOARD_FULL", "本局和棋"]]) {
+    const app = loadGame({ local: true });
+    Object.assign(app.state.localGame, { status: "finished", winnerColor, resultReason });
+    app.renderGame();
+    app.viewFinishedBoard();
+    app.renderGame();
+    assert.equal(app.elements.resultDialog.open, false);
+    app.showFinishedResult();
+    assert.equal(app.elements.resultTitle.textContent, title);
+    assert.equal(app.elements.resultDialog.open, true);
+  }
 });

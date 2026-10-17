@@ -393,6 +393,10 @@ dialog::backdrop { background: #273b344d; backdrop-filter: blur(3px); }
 .rule-grid p, .dialog-note { font-size: 14px; line-height: 1.7; }
 .result-symbol { background: var(--wood) url("assets/design/maple-board.jpg") center / cover; }
 .result-actions { grid-template-columns: 1fr; }
+.text-button { min-height: 44px; padding: 0 12px; border: 0; background: none; color: var(--green); text-decoration: underline; text-underline-offset: 4px; cursor: pointer; }
+.finished-actions { display: grid; gap: 12px; margin: 18px 0; grid-column: 1 / -1; grid-row: 2; }
+.finished-actions p { margin: 0; color: var(--muted); font-size: 14px; line-height: 1.7; }
+.game-shell.finished .move-log, .game-shell.finished .rule-disclosure { grid-row: auto; }
 .confirm-dialog p { font-size: 14px; line-height: 1.7; }
 @media (max-width: 900px) {
   .topbar, main { width: min(720px, calc(100% - 40px)); }

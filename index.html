@@ -122,9 +122,13 @@
             <div><span>待确认落点</span><strong id="previewCoordinate">尚未选择</strong><small id="previewHint">点击棋盘上的空交叉点</small></div>
           </div>
           <button class="primary-button confirm-button" id="confirmButton" type="button" disabled>确认落子</button>
-          <div class="match-actions">
+          <div class="match-actions" id="matchActions">
             <button class="quiet-button" id="undoButton" type="button" disabled>请求悔棋（剩余 2 次）</button>
             <button class="quiet-button danger" id="resignButton" type="button">认输</button>
+          </div>
+          <div class="finished-actions hidden" id="finishedActions">
+            <p id="finishedNotice" aria-live="polite"></p>
+            <button class="primary-button" id="showResultButton" type="button">查看对局结果</button>
           </div>
           <details class="move-log" open>
             <summary class="move-log-heading"><span>最近落子</span><span id="moveCount">0 手</span></summary>
@@ -147,12 +151,13 @@
       </form>
     </dialog>
 
-    <dialog class="result-dialog" id="resultDialog">
+    <dialog class="result-dialog" id="resultDialog" aria-labelledby="resultTitle" aria-describedby="resultMessage">
       <div class="result-card">
         <p class="eyebrow">MATCH RESULT</p>
         <div class="result-symbol" id="resultSymbol" aria-hidden="true">●</div>
         <h2 id="resultTitle">黑方获胜</h2>
         <p id="resultMessage">连成五子，本局结束。</p>
+        <button class="text-button" id="viewBoardButton" type="button">查看棋盘</button>
         <div class="result-actions">
           <button class="primary-button" id="rematchButton" type="button">再来一局</button>
           <button class="quiet-button" id="resultSwapSeatsButton" type="button">交换先后手</button>

@@ -67,6 +67,11 @@ const elements = {
   confirmButton: document.querySelector("#confirmButton"),
   undoButton: document.querySelector("#undoButton"),
   resignButton: document.querySelector("#resignButton"),
+  matchActions: document.querySelector("#matchActions"),
+  finishedActions: document.querySelector("#finishedActions"),
+  finishedNotice: document.querySelector("#finishedNotice"),
+  showResultButton: document.querySelector("#showResultButton"),
+  viewBoardButton: document.querySelector("#viewBoardButton"),
   moveCount: document.querySelector("#moveCount"),
   moveList: document.querySelector("#moveList"),
   resultSymbol: document.querySelector("#resultSymbol"),
@@ -86,7 +91,8 @@ const state = {
   previewAnalysis: null,
   eventAbort: null,
   eventLoopId: 0,
-  resultKey: null,
+  viewingBoard: false,
+  rematchInFlight: false,
   statusOverride: null,
   undoInFlight: null,
 };
@@ -512,7 +518,9 @@ function renderPlayers() {
   }
   elements.playerStrip.innerHTML = players.map((player) => {
     const active = game.currentColor === player.color && game.status === "playing";
-    const status = state.transport === "offline" ? (active ? "当前回合" : "等待回合") : `${player.connected ? "在线" : "离线"}${active ? " · 当前回合" : ""}`;
+    const status = state.transport === "offline"
+      ? game.status === "finished" ? "本局结束" : active ? "当前回合" : "等待回合"
+      : `${player.connected ? "在线" : "离线"}${active ? " · 当前回合" : ""}`;
     return `<div class="player-card${active ? " active" : ""}"><span class="seat-stone ${colorClass(player.color)}"></span><span><strong>${escapeHtml(player.name)}</strong><small>${status}</small></span></div>`;
   }).join("");
 }
@@ -520,12 +528,12 @@ function renderPlayers() {
 function renderTurn() {
   const game = currentGame();
   if (!game) return;
-  const color = game.currentColor;
+  const color = game.status === "finished" && game.winnerColor ? game.winnerColor : game.currentColor;
   elements.turnStone.className = `turn-stone ${colorClass(color)}`;
   elements.turnNumber.textContent = String(game.turn).padStart(2, "0");
   if (game.status === "finished") {
     elements.turnEyebrow.textContent = "MATCH FINISHED";
-    elements.turnTitle.textContent = game.winnerColor ? `${colorLabel(game.winnerColor)}获胜` : "本局和棋";
+    elements.turnTitle.textContent = game.winnerColor ? `${colorLabel(game.winnerColor)}获胜 · 本局结束` : "本局和棋";
   } else if (undoActionState().pending || state.undoInFlight) {
     elements.turnEyebrow.textContent = "UNDO REQUEST";
     elements.turnTitle.textContent = "悔棋确认中";
@@ -612,11 +620,53 @@ function renderMoveLog() {
   elements.moveList.innerHTML = [...moves].reverse().slice(0, 16).map((move) => `<li><i class="${colorClass(move.color)}"></i><span>${colorLabel(move.color)} · ${coordinateLabel(move.row, move.col)}</span><time>#${String(move.turn).padStart(2, "0")}</time></li>`).join("");
 }
 
+function incomingSeatSwapRequest() {
+  const requesterId = state.room?.seatSwapRequestPlayerId;
+  return Boolean(state.transport === "online" && requesterId
+    && requesterId !== state.session?.playerId
+    && ["waiting", "finished"].includes(state.room?.status));
+}
+
+function renderFinishedActions() {
+  const finished = currentGame()?.status === "finished";
+  elements.gameScreen.classList.toggle("finished", finished);
+  [elements.previewCard, elements.confirmButton, elements.matchActions].forEach((element) => {
+    element.classList.toggle("hidden", finished);
+  });
+  elements.finishedActions.classList.toggle("hidden", !finished);
+  if (!finished) return;
+  let notice = "棋盘已保留，可随时查看结果并选择下一步。";
+  if (state.transport === "online") {
+    const requesterId = state.room.seatSwapRequestPlayerId;
+    const votes = state.room.rematchVotes || [];
+    if (incomingSeatSwapRequest()) notice = "对方请求交换先后手，查看后可同意或拒绝。";
+    else if (requesterId) notice = "已请求交换先后手，等待对方确认。";
+    else if (votes.some((id) => id !== state.session.playerId)) notice = "对方邀请再来一局，查看结果后可接受邀请。";
+    else if (votes.includes(state.session.playerId)) notice = "已邀请再来一局，等待对方；同意后将开始新局。";
+  }
+  elements.finishedNotice.textContent = notice;
+}
+
+function viewFinishedBoard() {
+  if (currentGame()?.status !== "finished") return;
+  state.viewingBoard = true;
+  elements.resultDialog.close();
+  renderFinishedActions();
+  elements.showResultButton.focus({ preventScroll: true });
+}
+
+function showFinishedResult() {
+  if (currentGame()?.status !== "finished") return;
+  state.viewingBoard = false;
+  maybeShowSeatSwapRequest();
+  maybeShowResult();
+}
+
 function renderStatus() {
   const game = currentGame();
   if (!game) return;
   const undo = undoActionState();
-  if (game.status === "finished") displayStatus("本局已经结束，可选择再来一局或返回大厅。");
+  if (game.status === "finished") displayStatus("本局已经结束，棋盘仅供查看。点击「查看对局结果」可选择下一步。");
   else if (undo.busy) displayStatus("正在提交悔棋操作…");
   else if (state.statusOverride?.error) displayStatus(state.statusOverride.message, true);
   else if (undo.pending) {
@@ -634,7 +684,13 @@ function renderStatus() {
 function renderGame() {
   const game = currentGame();
   if (!game) return;
-  if (elements.resultDialog.open && game.status === "playing") elements.resultDialog.close();
+  if (game.status !== "finished") {
+    state.viewingBoard = false;
+    if (elements.resultDialog.open) elements.resultDialog.close();
+  } else {
+    state.preview = null;
+    state.previewAnalysis = null;
+  }
   renderTurn();
   renderPlayers();
   renderRules();
@@ -644,6 +700,8 @@ function renderGame() {
   renderMoveLog();
   renderStatus();
   renderSeatSwapActions();
+  renderFinishedActions();
+  maybeShowSeatSwapRequest();
   maybeShowResult();
   maybeShowUndoRequest();
 }
@@ -675,11 +733,11 @@ function renderRoom() {
     state.preview = null;
     showScreen("waiting");
     renderWaiting();
+    maybeShowSeatSwapRequest();
   } else if (state.room.game) {
     showScreen("game");
     renderGame();
   }
-  maybeShowSeatSwapRequest();
 }
 
 function handleIntersection(row, col) {
@@ -826,15 +884,12 @@ function respondToSeatSwap(decision) {
 }
 
 function maybeShowSeatSwapRequest() {
-  const requesterId = state.room?.seatSwapRequestPlayerId;
-  const isRecipient = state.transport === "online"
-    && requesterId
-    && requesterId !== state.session?.playerId
-    && ["waiting", "finished"].includes(state.room?.status);
-  if (!isRecipient) {
+  if (!incomingSeatSwapRequest()) {
     if (elements.seatSwapDialog.open) elements.seatSwapDialog.close();
     return;
   }
+  if (state.room.status === "finished" && state.viewingBoard) return;
+  const requesterId = state.room.seatSwapRequestPlayerId;
   const requester = state.room.players.find((player) => player.id === requesterId);
   elements.seatSwapRequestMessage.textContent = state.room.status === "finished"
     ? `${requester?.name || "对方"} 希望下一局交换先后手；同意后将立即开始新对局。`
@@ -866,9 +921,6 @@ function maybeShowResult() {
   const game = currentGame();
   if (!game || game.status !== "finished") return;
   renderSeatSwapActions();
-  const key = `${state.transport}:${state.room?.version || game.moveHistory.length}:${game.resultReason}:${game.winnerColor}`;
-  if (state.resultKey === key) return;
-  state.resultKey = key;
   if (game.winnerColor) {
     elements.resultSymbol.textContent = game.winnerColor === BLACK ? "●" : "○";
     elements.resultTitle.textContent = `${colorLabel(game.winnerColor)}获胜`;
@@ -880,13 +932,15 @@ function maybeShowResult() {
   }
   if (state.transport === "online") {
     const voted = state.room.rematchVotes?.includes(state.session.playerId);
-    elements.rematchButton.textContent = voted ? "已邀请，等待对方" : "邀请再来一局";
-    elements.rematchButton.disabled = voted;
+    const invited = state.room.rematchVotes?.some((id) => id !== state.session.playerId);
+    elements.rematchButton.textContent = voted ? "已邀请，等待对方" : invited ? "接受邀请，再来一局" : "邀请再来一局";
+    elements.rematchButton.disabled = state.rematchInFlight || voted || Boolean(state.room.seatSwapRequestPlayerId);
   } else {
     elements.rematchButton.textContent = "再来一局";
     elements.rematchButton.disabled = false;
   }
-  if (!elements.resultDialog.open) elements.resultDialog.showModal();
+  if (!state.viewingBoard && !incomingSeatSwapRequest() && !elements.seatSwapDialog.open
+    && !elements.resultDialog.open) elements.resultDialog.showModal();
 }
 
 function startOffline(mode = selectedMode()) {
@@ -897,7 +951,7 @@ function startOffline(mode = selectedMode()) {
   state.localGame = createLocalGame(mode);
   state.preview = null;
   state.previewAnalysis = null;
-  state.resultKey = null;
+  state.viewingBoard = false;
   clearStatusOverride();
   elements.roomChip.classList.add("hidden");
   showScreen("game");
@@ -1030,7 +1084,7 @@ async function leaveRoom() {
   state.transport = "idle";
   state.preview = null;
   state.previewAnalysis = null;
-  state.resultKey = null;
+  state.viewingBoard = false;
   elements.roomChip.classList.add("hidden");
   if (elements.resultDialog.open) elements.resultDialog.close();
   showScreen("lobby");
@@ -1093,27 +1147,32 @@ async function resignGame() {
 
 async function rematch() {
   const game = currentGame();
-  if (!game) return;
+  if (!game || game.status !== "finished" || state.rematchInFlight) return;
   if (state.transport === "offline") {
     state.localGame = createLocalGame(game.mode);
     state.preview = null;
     state.previewAnalysis = null;
-    state.resultKey = null;
+    state.viewingBoard = false;
     elements.resultDialog.close();
     clearStatusOverride();
     renderGame();
     return;
   }
+  const code = state.room.code;
+  if (state.room.rematchVotes?.includes(state.session.playerId) || state.room.seatSwapRequestPlayerId) return;
+  state.rematchInFlight = true;
   elements.rematchButton.disabled = true;
   try {
-    const result = await apiRequest(`rooms/${state.room.code}/rematch`, { body: "{}" });
-    state.room = result.room;
-    state.resultKey = null;
-    if (result.room.status === "playing") elements.resultDialog.close();
-    renderRoom();
+    const result = await apiRequest(`rooms/${code}/rematch`, { body: "{}" });
+    if (state.transport === "online" && state.room?.code === code && applyRoomUpdate(result.room)) renderRoom();
   } catch (error) {
-    elements.resultMessage.textContent = error.message;
-    elements.rematchButton.disabled = false;
+    if (state.room?.code === code) elements.resultMessage.textContent = error.message;
+  } finally {
+    state.rematchInFlight = false;
+    if (state.transport === "online" && state.room?.code === code) {
+      elements.rematchButton.disabled = state.room.status !== "finished"
+        || state.room.rematchVotes?.includes(state.session.playerId) || Boolean(state.room.seatSwapRequestPlayerId);
+    }
   }
 }
 
@@ -1165,6 +1224,12 @@ function bindEvents() {
   elements.confirmResignButton.addEventListener("click", resignGame);
   elements.confirmExitButton.addEventListener("click", leaveRoom);
   elements.rematchButton.addEventListener("click", rematch);
+  elements.viewBoardButton.addEventListener("click", viewFinishedBoard);
+  elements.showResultButton.addEventListener("click", showFinishedResult);
+  elements.resultDialog.addEventListener("cancel", (event) => {
+    event.preventDefault();
+    viewFinishedBoard();
+  });
   elements.resultSwapSeatsButton.addEventListener("click", swapSeats);
   elements.resultLobbyButton.addEventListener("click", leaveRoom);
   elements.approveSeatSwapButton.addEventListener("click", () => respondToSeatSwap("accept"));
