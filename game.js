@@ -1078,8 +1078,9 @@ function maybeShowResult() {
   const game = currentGame();
   if (!game || game.status !== "finished") return;
   renderSeatSwapActions();
+  elements.resultSymbol.dataset.color = game.winnerColor ? colorClass(game.winnerColor) : "";
   if (game.winnerColor) {
-    elements.resultSymbol.textContent = game.winnerColor === BLACK ? "●" : "○";
+    elements.resultSymbol.textContent = "";
     elements.resultTitle.textContent = `${colorLabel(game.winnerColor)}获胜`;
     elements.resultMessage.textContent = game.resultReason === "RESIGN" ? "对方认输，本局立即结束。" : "连成五子，本局结束。";
   } else {

@@ -148,8 +148,8 @@ body[data-screen="game"] main { padding-top: 10px; }
 .intersection.star::marker { display: none; }
 .star-dot { position: absolute; z-index: 1; top: 50%; left: 50%; width: 5px; height: 5px; border-radius: 50%; background: rgba(64, 43, 19, 0.78); transform: translate(-50%, -50%); pointer-events: none; }
 .stone { position: absolute; z-index: 3; top: 50%; left: 50%; width: clamp(16px, 80%, 42px); aspect-ratio: 1; border-radius: 50%; transform: translate(-50%, -50%); pointer-events: none; }
-.stone.black { background: radial-gradient(circle at 34% 27%, #535753 0%, #171918 55%, #070807 100%); box-shadow: inset -3px -4px 7px rgba(0, 0, 0, 0.42), 0 3px 5px rgba(55, 36, 13, 0.34); }
-.stone.white { background: radial-gradient(circle at 33% 24%, #fff 0%, #f3efe5 56%, #d7d0c1 100%); box-shadow: inset -3px -4px 7px rgba(120, 108, 87, 0.18), 0 3px 5px rgba(55, 36, 13, 0.23); }
+.stone.black, .result-symbol[data-color="black"]::before { background: radial-gradient(circle at 34% 27%, #535753 0%, #171918 55%, #070807 100%); box-shadow: inset -3px -4px 7px rgba(0, 0, 0, 0.42), 0 3px 5px rgba(55, 36, 13, 0.34); }
+.stone.white, .result-symbol[data-color="white"]::before { background: radial-gradient(circle at 33% 24%, #fff 0%, #f3efe5 56%, #d7d0c1 100%); box-shadow: inset -3px -4px 7px rgba(120, 108, 87, 0.18), 0 3px 5px rgba(55, 36, 13, 0.23); }
 .stone.ghost { opacity: 0.48; }
 .stone.ghost::after { content: ""; position: absolute; inset: -5px; border: 2px solid var(--green); border-radius: 50%; animation: ghost-ring 1.2s ease-in-out infinite; }
 .stone.ghost.illegal { background: rgba(168, 77, 61, 0.78); box-shadow: none; }
@@ -212,6 +212,7 @@ dialog::backdrop { background: rgba(24, 25, 23, 0.5); backdrop-filter: blur(6px)
 .result-dialog { width: min(440px, calc(100% - 24px)); }
 .result-card { padding: 36px; text-align: center; }
 .result-symbol { width: 74px; height: 74px; display: grid; place-items: center; margin: 18px auto; border-radius: 50%; background: var(--wood); color: #151716; font-size: 2.5rem; }
+.result-symbol[data-color="black"]::before, .result-symbol[data-color="white"]::before { content: ""; width: 36px; height: 36px; border-radius: 50%; }
 .result-card h2 { margin: 0; font-family: Georgia, "Songti SC", serif; font-size: 2.1rem; font-weight: 500; }
 .result-card > p:not(.eyebrow) { color: var(--muted); line-height: 1.6; }
 .result-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 24px; }
@@ -393,6 +394,8 @@ dialog::backdrop { background: #273b344d; backdrop-filter: blur(3px); }
 .rule-grid p, .dialog-note { font-size: 14px; line-height: 1.7; }
 .result-symbol { background: var(--wood) url("assets/design/maple-board.jpg") center / cover; }
 .result-actions { grid-template-columns: 1fr; }
+.result-card .text-button:focus { outline: none; }
+.result-card .text-button:focus-visible { text-decoration-thickness: 3px; }
 .text-button { min-height: 44px; padding: 0 12px; border: 0; background: none; color: var(--green); text-decoration: underline; text-underline-offset: 4px; cursor: pointer; }
 .finished-actions { display: grid; gap: 12px; margin: 18px 0; grid-column: 1 / -1; grid-row: 2; }
 .finished-actions p { margin: 0; color: var(--muted); font-size: 14px; line-height: 1.7; }
